@@ -12,7 +12,7 @@ const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME;
 
 /**
  * Upload file to AWS S3
- * @param {Buffer} fileBuffer - File buffer to upload
+ * @param {Buffer|Stream} fileBody - File buffer or stream to upload
  * @param {string} fileName - File name
  * @param {string} contentType - MIME type
  * @param {string} folder - Folder path in S3 (optional)

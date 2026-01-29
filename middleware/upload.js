@@ -1,8 +1,26 @@
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const { validateImage } = require('../services/imageProcessingService');
+const { uploadToS3 } = require('../services/awsS3Service');
 
-// Configure multer for memory storage (we'll upload directly to S3)
+// Configure multer for memory storage (we'll upload directly to S3 for small images)
 const storage = multer.memoryStorage();
+
+// Temporary disk storage for large uploads (videos, large files)
+const tmpDir = path.join(__dirname, '..', 'tmp', 'uploads');
+if (!fs.existsSync(tmpDir)) {
+  fs.mkdirSync(tmpDir, { recursive: true });
+}
+
+const diskStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, tmpDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
 
 // File filter to only accept images
 const fileFilter = (req, file, cb) => {
@@ -134,8 +152,9 @@ const handlePDFUpload = (req, res, next) => {
 };
 
 // Middleware for video uploads (larger file size limit)
+// Use disk storage for large files to avoid holding them in memory
 const uploadVideo = multer({
-  storage: storage,
+  storage: diskStorage,
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
     if (allowedMimeTypes.includes(file.mimetype)) {
@@ -145,12 +164,12 @@ const uploadVideo = multer({
     }
   },
   limits: {
-    fileSize: 500 * 1024 * 1024 // 500MB limit for videos
+    fileSize: 5 * 1024 * 1024 * 1024 // 5GB limit for videos
   }
 }).single('video');
 
 const handleVideoUpload = (req, res, next) => {
-  uploadVideo(req, res, (err) => {
+  uploadVideo(req, res, async (err) => {
     if (err) {
       return res.status(400).json({
         success: false,
@@ -158,20 +177,45 @@ const handleVideoUpload = (req, res, next) => {
       });
     }
 
-    if (req.file && req.file.size > 500 * 1024 * 1024) {
+    // Note: when using diskStorage, multer provides a path on disk
+    if (req.file && req.file.size > 5 * 1024 * 1024 * 1024) {
+      // Remove temp file if present
+      if (req.file && req.file.path) {
+        fs.unlink(req.file.path, () => {});
+      }
       return res.status(400).json({
         success: false,
-        message: 'Video size exceeds 500MB limit'
+        message: 'Video size exceeds 5GB limit'
       });
     }
 
-    next();
+    // Stream the temp file to S3 to avoid buffering into memory
+    try {
+      if (req.file && req.file.path) {
+        const fileStream = fs.createReadStream(req.file.path);
+        const s3Url = await uploadToS3(fileStream, req.file.originalname, req.file.mimetype, 'videos');
+        // Attach uploaded URL to request for downstream handlers
+        req.file.s3Url = s3Url;
+        // Remove temp file
+        fs.unlink(req.file.path, () => {});
+      }
+      next();
+    } catch (uploadErr) {
+      // Attempt to remove temp file on error
+      if (req.file && req.file.path) {
+        fs.unlink(req.file.path, () => {});
+      }
+      return res.status(500).json({
+        success: false,
+        message: `Video upload to storage failed: ${uploadErr.message}`
+      });
+    }
   });
 };
 
 // Middleware for multiple file uploads (PDF and Video for chapters)
 const uploadPDFVideo = multer({
-  storage: storage,
+  storage: diskStorage,
   fileFilter: (req, file, cb) => {
     // Allow PDF files
     if (file.mimetype === 'application/pdf') {
@@ -187,7 +231,7 @@ const uploadPDFVideo = multer({
     cb(new Error('Invalid file type. Only PDF and video files are allowed.'), false);
   },
   limits: {
-    fileSize: 500 * 1024 * 1024 // 500MB limit (for videos)
+    fileSize: 5 * 1024 * 1024 * 1024 // 5GB limit (for videos)
   }
 }).fields([
   { name: 'pdf', maxCount: 1 },
@@ -195,7 +239,7 @@ const uploadPDFVideo = multer({
 ]);
 
 const handleMultipleUpload = (req, res, next) => {
-  uploadPDFVideo(req, res, (err) => {
+  uploadPDFVideo(req, res, async (err) => {
     if (err) {
       return res.status(400).json({
         success: false,
@@ -211,15 +255,41 @@ const handleMultipleUpload = (req, res, next) => {
           message: 'PDF file size exceeds 50MB limit'
         });
       }
-      if (req.files.video && req.files.video[0] && req.files.video[0].size > 500 * 1024 * 1024) {
+      if (req.files.video && req.files.video[0] && req.files.video[0].size > 5 * 1024 * 1024 * 1024) {
+        // Remove temp file if present
+        if (req.files.video[0] && req.files.video[0].path) {
+          fs.unlink(req.files.video[0].path, () => {});
+        }
         return res.status(400).json({
           success: false,
-          message: 'Video file size exceeds 500MB limit'
+          message: 'Video file size exceeds 5GB limit'
         });
       }
     }
 
-    next();
+    // If a video was uploaded to disk, stream it to S3 and clean up
+    try {
+      if (req.files && req.files.video && req.files.video[0] && req.files.video[0].path) {
+        const file = req.files.video[0];
+        const fileStream = fs.createReadStream(file.path);
+        const s3Url = await uploadToS3(fileStream, file.originalname, file.mimetype, 'videos');
+        // Attach uploaded URL for downstream handlers
+        req.files.video[0].s3Url = s3Url;
+        // Remove temp file
+        fs.unlink(file.path, () => {});
+      }
+
+      next();
+    } catch (uploadErr) {
+      // Cleanup on error
+      if (req.files && req.files.video && req.files.video[0] && req.files.video[0].path) {
+        fs.unlink(req.files.video[0].path, () => {});
+      }
+      return res.status(500).json({
+        success: false,
+        message: `File upload to storage failed: ${uploadErr.message}`
+      });
+    }
   });
 };
 
