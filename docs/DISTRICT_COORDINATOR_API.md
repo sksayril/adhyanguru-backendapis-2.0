@@ -349,3 +349,99 @@ Authorization: Bearer <token>
 }
 ```
 
+---
+
+### 8. Get Wallet Balance
+Get wallet balance and earnings information. (Protected)
+
+**GET** `/wallet`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Wallet balance retrieved successfully",
+  "data": {
+    "userId": "ADGUDC01",
+    "name": "District Coordinator",
+    "wallet": {
+      "balance": 500.00,
+      "totalEarned": 600.00,
+      "totalWithdrawn": 100.00
+    }
+  }
+}
+```
+
+---
+
+### 9. Get Wallet Transactions
+Get wallet transaction history with pagination. (Protected)
+
+**GET** `/wallet/transactions`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+- `type` (optional): Filter by transaction type (`COMMISSION`, `WITHDRAWAL`, `ADJUSTMENT`)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Wallet transactions retrieved successfully",
+  "data": {
+    "transactions": [
+      {
+        "_id": "507f1f77bcf86cd799439020",
+        "type": "COMMISSION",
+        "amount": 10.00,
+        "balanceAfter": 500.00,
+        "relatedTransaction": {
+          "type": "SUBSCRIPTION",
+          "transactionId": "507f1f77bcf86cd799439021",
+          "student": {
+            "userId": "ADGUSTU01",
+            "firstName": "John",
+            "lastName": "Doe"
+          },
+          "amount": 100
+        },
+        "commissionDetails": {
+          "percentage": 10,
+          "baseAmount": 100
+        },
+        "description": "Commission from subscription - 10 (10%)",
+        "status": "COMPLETED",
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 15,
+      "pages": 1
+    }
+  }
+}
+```
+
+**Note:** 
+- District Coordinators receive commissions when students referred by Field Employees in their hierarchy purchase subscriptions or courses
+- Commission percentages are configurable by Super Admin through the Commission Settings API
+- Super Admin can create and update commission settings using `/api/super-admin/commission-settings` endpoints
+- Default commission percentages: Coordinator 40%, District Coordinator 10%, Team Leader 10%, Field Employee 10%
+
+---
+
+## Error Responses

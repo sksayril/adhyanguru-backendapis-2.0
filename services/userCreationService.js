@@ -1,5 +1,6 @@
 const { encryptPassword } = require('./passwordService');
 const { generateUserId, getNextSequenceNumber } = require('./userIdService');
+const { generateReferralCode } = require('./referralCodeService');
 const { USER_ROLES } = require('../utils/constants');
 const { getModelByRole } = require('../utils/userModelMapper');
 
@@ -100,6 +101,15 @@ const createUser = async (userType, userData, creator) => {
   }
   if (boundingBox) {
     newUserData.boundingBox = boundingBox;
+  }
+
+  // Generate referral code for Field Employees
+  if (userType === USER_ROLES.FIELD_EMPLOYEE) {
+    try {
+      newUserData.referralCode = await generateReferralCode();
+    } catch (error) {
+      throw new Error(`Failed to generate referral code: ${error.message}`);
+    }
   }
 
   // Create user

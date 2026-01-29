@@ -74,4 +74,8 @@ app.use('/api/super-admin', courseRouter);
 var publicCourseRouter = require('./routes/publicCourse.routes');
 app.use('/api/public/course', publicCourseRouter);
 
+// Public thumbnail routes (no authentication)
+var publicThumbnailRouter = require('./routes/publicThumbnail.routes');
+app.use('/api/public/thumbnails', publicThumbnailRouter);
+
 module.exports = app;

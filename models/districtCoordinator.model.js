@@ -97,6 +97,42 @@ const districtCoordinatorSchema = new mongoose.Schema({
     default: USER_ROLES.DISTRICT_COORDINATOR,
     immutable: true
   },
+  // Task levels assigned to this district coordinator
+  taskLevels: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TaskLevel',
+    default: []
+  }],
+  // Coordinator who assigned this district coordinator (for splitting)
+  assignedByCoordinator: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Coordinator',
+    default: null
+  },
+  // Team Leaders assigned to this district coordinator (split/distribution)
+  assignedTeamLeaders: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TeamLeader',
+    default: []
+  }],
+  // Wallet balance for commissions
+  wallet: {
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    totalEarned: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    totalWithdrawn: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
   isActive: {
     type: Boolean,
     default: true

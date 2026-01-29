@@ -83,6 +83,34 @@ const studentSchema = new mongoose.Schema({
     default: null,
     trim: true
   },
+  // Referral hierarchy - tracks the chain of users who benefit from this student
+  referralHierarchy: {
+    referringFieldEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'FieldEmployee',
+      default: null
+    },
+    teamLeader: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TeamLeader',
+      default: null
+    },
+    districtCoordinator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DistrictCoordinator',
+      default: null
+    },
+    coordinator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Coordinator',
+      default: null
+    },
+    admin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+      default: null
+    }
+  },
   role: {
     type: String,
     default: USER_ROLES.STUDENT,
@@ -107,6 +135,12 @@ studentSchema.index({ 'mainCategories.mainCategory': 1, 'mainCategories.subCateg
 studentSchema.index({ mobileNumber: 1 });
 studentSchema.index({ email: 1 }, { sparse: true });
 studentSchema.index({ fieldEmployeeCode: 1 });
+studentSchema.index({ 'referralHierarchy.coordinator': 1 });
+studentSchema.index({ 'referralHierarchy.districtCoordinator': 1 });
+studentSchema.index({ 'referralHierarchy.teamLeader': 1 });
+studentSchema.index({ 'referralHierarchy.referringFieldEmployee': 1 });
+studentSchema.index({ 'referralHierarchy.coordinator': 1, createdAt: 1 });
+studentSchema.index({ 'referralHierarchy.districtCoordinator': 1, createdAt: 1 });
 
 studentSchema.pre('save', function(next) {
   this.updatedAt = Date.now();

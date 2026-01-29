@@ -250,7 +250,856 @@ Authorization: Bearer <token>
 
 ---
 
-### 7. Get User Details
+### 7. Get Commission Settings
+Get current commission settings configured for the referral system. (Protected - Super Admin only)
+
+**GET** `/commission-settings`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Commission settings retrieved successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439030",
+    "coordinatorPercentage": 40,
+    "districtCoordinatorPercentage": 10,
+    "teamLeaderPercentage": 10,
+    "fieldEmployeePercentage": 10,
+    "updatedBy": {
+      "_id": "507f1f77bcf86cd799439011",
+      "userId": "ADGUSUP01",
+      "firstName": "Super",
+      "lastName": "Admin"
+    },
+    "updatedByModel": "SuperAdmin",
+    "isActive": true,
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "updatedAt": "2024-01-15T10:00:00.000Z"
+  }
+}
+```
+
+**Note:** If no settings exist, default values are returned (Coordinator: 40%, District Coordinator: 10%, Team Leader: 10%, Field Employee: 10%).
+
+---
+
+### 8. Create Commission Settings
+Create initial commission settings for the referral system. (Protected - Super Admin only)
+
+**POST** `/commission-settings`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "coordinatorPercentage": 40,
+  "districtCoordinatorPercentage": 10,
+  "teamLeaderPercentage": 10,
+  "fieldEmployeePercentage": 10
+}
+```
+
+**Request Body Fields (all required):**
+- `coordinatorPercentage` (required): Commission percentage for Coordinators (0-100)
+- `districtCoordinatorPercentage` (required): Commission percentage for District Coordinators (0-100)
+- `teamLeaderPercentage` (required): Commission percentage for Team Leaders (0-100)
+- `fieldEmployeePercentage` (required): Commission percentage for Field Employees (0-100)
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "message": "Commission settings created successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439030",
+    "coordinatorPercentage": 40,
+    "districtCoordinatorPercentage": 10,
+    "teamLeaderPercentage": 10,
+    "fieldEmployeePercentage": 10,
+    "updatedBy": "507f1f77bcf86cd799439011",
+    "updatedByModel": "SuperAdmin",
+    "isActive": true,
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "updatedAt": "2024-01-15T10:00:00.000Z"
+  }
+}
+```
+
+**Validation:**
+- All percentages must be between 0 and 100
+- All four percentages are required
+- Cannot create if active settings already exist (use PUT to update instead)
+
+**Error Response (400) - If settings already exist:**
+```json
+{
+  "success": false,
+  "message": "Commission settings already exist. Use PUT /commission-settings to update them."
+}
+```
+
+**Error Response (400) - Missing fields:**
+```json
+{
+  "success": false,
+  "message": "All commission percentages are required: coordinatorPercentage, districtCoordinatorPercentage, teamLeaderPercentage, fieldEmployeePercentage"
+}
+```
+
+---
+
+### 9. Update Commission Settings
+Update commission percentages for the referral system. (Protected - Super Admin only)
+
+**PUT** `/commission-settings`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "coordinatorPercentage": 40,
+  "districtCoordinatorPercentage": 10,
+  "teamLeaderPercentage": 10,
+  "fieldEmployeePercentage": 10
+}
+```
+
+**Note:** All fields are optional. Only provided fields will be updated. Previous settings are deactivated and new settings are created (maintains history).
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Commission settings updated successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439031",
+    "coordinatorPercentage": 40,
+    "districtCoordinatorPercentage": 10,
+    "teamLeaderPercentage": 10,
+    "fieldEmployeePercentage": 10,
+    "updatedBy": "507f1f77bcf86cd799439011",
+    "updatedByModel": "SuperAdmin",
+    "isActive": true,
+    "createdAt": "2024-01-15T11:00:00.000Z",
+    "updatedAt": "2024-01-15T11:00:00.000Z"
+  }
+}
+```
+
+**Validation:**
+- All percentages must be between 0 and 100
+- At least one percentage must be provided
+
+**Error Response (400):**
+```json
+{
+  "success": false,
+  "message": "coordinatorPercentage must be a number between 0 and 100"
+}
+```
+
+---
+
+### 10. Get Dashboard
+Get comprehensive dashboard with all metrics, revenue, expenses, user statistics, and charts. Optimized using aggregation pipelines for fast response. (Protected)
+
+**GET** `/dashboard?period=30`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `period` (optional): Number of days for charts and period-based metrics (default: 30)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Dashboard data retrieved successfully",
+  "data": {
+    "overview": {
+      "totalUsers": 1500,
+      "userBreakdown": {
+        "students": 1200,
+        "admins": 5,
+        "coordinators": 20,
+        "districtCoordinators": 15,
+        "teamLeaders": 50,
+        "fieldEmployees": 210
+      },
+      "activeUsers": {
+        "students": 850,
+        "total": 850
+      },
+      "inactiveUsers": {
+        "students": 350,
+        "total": 350,
+        "note": "Users with no activity in last 10 days"
+      }
+    },
+    "revenue": {
+      "period": {
+        "subscriptions": 85000,
+        "courses": 135000,
+        "total": 220000,
+        "transactions": 250,
+        "netRevenue": 180000
+      },
+      "allTime": {
+        "subscriptions": 500000,
+        "courses": 800000,
+        "total": 1300000,
+        "netRevenue": 1100000
+      }
+    },
+    "expenses": {
+      "period": {
+        "total": 40000,
+        "transactions": 200
+      },
+      "allTime": {
+        "total": 200000
+      },
+      "note": "Total commissions paid out to coordinators, district coordinators, team leaders, and field employees"
+    },
+    "userCounts": {
+      "students": 1200,
+      "admins": 5,
+      "coordinators": 20,
+      "districtCoordinators": 15,
+      "teamLeaders": 50,
+      "fieldEmployees": 210
+    },
+    "growthChart": {
+      "period": "30 days",
+      "data": [
+        {
+          "date": "2024-01-01",
+          "signUps": 25
+        },
+        {
+          "date": "2024-01-02",
+          "signUps": 30
+        }
+      ]
+    },
+    "salesChart": {
+      "period": "30 days",
+      "topSubcategories": [
+        {
+          "subCategory": "Mathematics",
+          "subCategoryId": "507f1f77bcf86cd799439020",
+          "totalSales": 50000,
+          "transactions": 150
+        },
+        {
+          "subCategory": "Science",
+          "subCategoryId": "507f1f77bcf86cd799439021",
+          "totalSales": 35000,
+          "transactions": 100
+        }
+      ],
+      "topCourses": [
+        {
+          "course": "Advanced Mathematics Course",
+          "courseId": "507f1f77bcf86cd799439022",
+          "totalSales": 80000,
+          "transactions": 80
+        },
+        {
+          "course": "Physics Fundamentals",
+          "courseId": "507f1f77bcf86cd799439023",
+          "totalSales": 55000,
+          "transactions": 55
+        }
+      ]
+    },
+    "recentActivity": {
+      "subscriptions": [
+        {
+          "student": {
+            "userId": "ADGUSTU01",
+            "name": "John Doe"
+          },
+          "plan": {
+            "duration": "1_MONTH",
+            "amount": 999
+          },
+          "subCategory": "Mathematics",
+          "amount": 999,
+          "createdAt": "2024-01-15T10:30:00.000Z"
+        }
+      ],
+      "coursePurchases": [
+        {
+          "student": {
+            "userId": "ADGUSTU02",
+            "name": "Jane Smith"
+          },
+          "course": {
+            "title": "Advanced Mathematics Course",
+            "price": 2000
+          },
+          "amount": 2000,
+          "createdAt": "2024-01-15T11:00:00.000Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Note:**
+- Dashboard uses MongoDB aggregation pipelines for optimal performance
+- Active users are determined by activity (subscriptions, course purchases, or new signups) in the last 10 days
+- Inactive users are users with no activity in the last 10 days
+- Revenue includes both subscription and course purchase revenue
+- Expenses represent total commissions paid out
+- Net revenue = Total revenue - Total expenses
+- Growth chart shows daily user sign-ups
+- Sales chart shows top 10 subcategories and courses by sales volume
+- All metrics are calculated using efficient aggregation pipelines
+
+---
+
+### 11. Get Server Health Check
+Get comprehensive server health check including database connectivity, system metrics, memory usage, and performance indicators. (Protected)
+
+**GET** `/health`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Health check completed",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "health": {
+    "status": "healthy",
+    "message": "All systems operational",
+    "issues": []
+  },
+  "server": {
+    "status": "running",
+    "platform": "win32",
+    "arch": "x64",
+    "hostname": "DESKTOP-ABC123",
+    "nodeVersion": "v20.19.4",
+    "uptime": 86400,
+    "uptimeFormatted": "1d 0h 0m 0s"
+  },
+  "database": {
+    "connected": true,
+    "state": "connected",
+    "responseTime": 15,
+    "error": null,
+    "stats": {
+      "collections": 25,
+      "dataSize": "125.5 MB",
+      "storageSize": "200.3 MB",
+      "indexes": 45,
+      "indexSize": "12.8 MB",
+      "objects": 15000
+    }
+  },
+  "memory": {
+    "process": {
+      "rss": "150.5 MB",
+      "heapTotal": "50.2 MB",
+      "heapUsed": "35.8 MB",
+      "external": "5.2 MB",
+      "arrayBuffers": "2.1 MB"
+    },
+    "system": {
+      "total": "16 GB",
+      "free": "8 GB",
+      "used": "8 GB",
+      "usagePercent": "50.00"
+    }
+  },
+  "cpu": {
+    "cores": 8,
+    "model": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
+    "loadAverage": [1.5, 1.2, 1.0]
+  },
+  "performance": {
+    "apiResponseTime": "25ms",
+    "databaseResponseTime": "15ms"
+  }
+}
+```
+
+**Health Status Values:**
+- `healthy`: All systems operational
+- `warning`: Some issues detected but system is functional
+- `unhealthy`: Critical issues detected
+
+**Common Issues:**
+- `Database is not connected`: MongoDB connection is down
+- `High memory usage`: System memory usage exceeds 90%
+- `Slow database response`: Database response time exceeds 1000ms
+
+**Note:**
+- Health check endpoint is lightweight and can be called frequently for monitoring
+- Database stats are only included when database is connected
+- Response time includes all health check operations
+- System metrics are real-time snapshots
+
+---
+
+### 12. Get Analytics Report
+Get comprehensive financial analytics report including trial balance, income statement, balance sheet, money distribution, and commission breakdown. Optimized using aggregation pipelines for fast response. (Protected - Super Admin only)
+
+**GET** `/analytics?period=all&startDate=2024-01-01&endDate=2024-12-31`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `period` (optional): Time period (`all`, `today`, `week`, `month`, `year`) - default: `all`
+- `startDate` (optional): Custom start date (YYYY-MM-DD format) - overrides period
+- `endDate` (optional): Custom end date (YYYY-MM-DD format) - overrides period
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Analytics report retrieved successfully",
+  "period": "Last 30 Days",
+  "dateRange": {
+    "createdAt": {
+      "$gte": "2024-01-01T00:00:00.000Z",
+      "$lte": "2024-01-31T23:59:59.999Z"
+    }
+  },
+  "data": {
+    "trialBalance": {
+      "debits": {
+        "expenses": 40000,
+        "walletBalances": 50000,
+        "total": 90000
+      },
+      "credits": {
+        "revenue": 220000,
+        "total": 220000
+      },
+      "balance": 130000
+    },
+    "incomeStatement": {
+      "revenue": {
+        "subscriptions": 85000,
+        "courses": 135000,
+        "total": 220000
+      },
+      "expenses": {
+        "commissions": 40000,
+        "total": 40000
+      },
+      "netIncome": 180000,
+      "grossProfit": 220000,
+      "operatingExpenses": 40000
+    },
+    "balanceSheet": {
+      "assets": {
+        "cash": 130000,
+        "accountsReceivable": 0,
+        "total": 130000
+      },
+      "liabilities": {
+        "accountsPayable": 50000,
+        "commissionsPayable": 10000,
+        "total": 60000
+      },
+      "equity": {
+        "retainedEarnings": 70000,
+        "total": 70000
+      },
+      "total": 260000
+    },
+    "revenue": {
+      "subscriptions": {
+        "total": 85000,
+        "count": 150
+      },
+      "courses": {
+        "total": 135000,
+        "count": 100
+      },
+      "total": 220000,
+      "totalTransactions": 250
+    },
+    "expenses": {
+      "total": 40000,
+      "count": 200,
+      "byRole": {
+        "Coordinator": 16000,
+        "DistrictCoordinator": 4000,
+        "TeamLeader": 10000,
+        "FieldEmployee": 10000
+      }
+    },
+    "commissionDistribution": {
+      "byRole": {
+        "Coordinator": {
+          "totalCommissions": 16000,
+          "transactions": 80,
+          "uniqueUsers": 5
+        },
+        "DistrictCoordinator": {
+          "totalCommissions": 4000,
+          "transactions": 40,
+          "uniqueUsers": 3
+        },
+        "TeamLeader": {
+          "totalCommissions": 10000,
+          "transactions": 50,
+          "uniqueUsers": 10
+        },
+        "FieldEmployee": {
+          "totalCommissions": 10000,
+          "transactions": 30,
+          "uniqueUsers": 25
+        }
+      },
+      "total": 40000
+    },
+    "walletBalances": {
+      "coordinators": {
+        "totalBalance": 20000,
+        "totalEarned": 50000,
+        "totalWithdrawn": 30000,
+        "count": 5
+      },
+      "districtCoordinators": {
+        "totalBalance": 10000,
+        "totalEarned": 20000,
+        "totalWithdrawn": 10000,
+        "count": 3
+      },
+      "teamLeaders": {
+        "totalBalance": 15000,
+        "totalEarned": 30000,
+        "totalWithdrawn": 15000,
+        "count": 10
+      },
+      "fieldEmployees": {
+        "totalBalance": 5000,
+        "totalEarned": 15000,
+        "totalWithdrawn": 10000,
+        "count": 25
+      },
+      "total": {
+        "balance": 50000,
+        "earned": 115000,
+        "withdrawn": 65000
+      }
+    },
+    "moneyDistribution": {
+      "byRole": {
+        "Coordinator": [
+          {
+            "month": "2024-01",
+            "amount": 8000,
+            "transactions": 40
+          },
+          {
+            "month": "2024-02",
+            "amount": 8000,
+            "transactions": 40
+          }
+        ],
+        "DistrictCoordinator": [
+          {
+            "month": "2024-01",
+            "amount": 2000,
+            "transactions": 20
+          }
+        ]
+      },
+      "summary": {
+        "Coordinator": 16000,
+        "DistrictCoordinator": 4000,
+        "TeamLeader": 10000,
+        "FieldEmployee": 10000
+      }
+    },
+    "transactionSummary": {
+      "walletTransactions": {
+        "COMMISSION": {
+          "total": 40000,
+          "count": 200
+        },
+        "WITHDRAWAL": {
+          "total": -30000,
+          "count": 50
+        }
+      },
+      "subscriptions": {
+        "COMPLETED": {
+          "total": 85000,
+          "count": 150
+        }
+      },
+      "coursePurchases": {
+        "COMPLETED": {
+          "total": 135000,
+          "count": 100
+        }
+      }
+    }
+  }
+}
+```
+
+**Financial Reports Explained:**
+
+1. **Trial Balance:**
+   - **Debits**: Expenses + Wallet Balances (money owed to users)
+   - **Credits**: Total Revenue
+   - **Balance**: Net difference (should match net income)
+
+2. **Income Statement:**
+   - **Revenue**: Subscriptions + Course Purchases
+   - **Expenses**: Commissions paid out
+   - **Net Income**: Revenue - Expenses
+
+3. **Balance Sheet:**
+   - **Assets**: Cash (net revenue after expenses and pending payouts)
+   - **Liabilities**: Accounts Payable (wallet balances) + Commissions Payable (unpaid commissions)
+   - **Equity**: Retained Earnings (net income - wallet balances)
+
+4. **Money Distribution:**
+   - Breakdown of commission payments by role
+   - Monthly distribution trends
+   - Summary totals by role
+
+**Note:**
+- All calculations use MongoDB aggregation pipelines for optimal performance
+- Date filtering supports custom ranges or predefined periods
+- Wallet balances represent money owed to users (liabilities)
+- Net income represents actual profit after all expenses
+- Assets = Cash available after accounting for all liabilities
+
+---
+
+### 18. Create Thumbnail
+Create a new thumbnail with title and image. Image is processed and stored in S3. (Protected - Super Admin only)
+
+**POST** `/thumbnails`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `title` (required): Thumbnail title (unique)
+- `image` (required): Image file (JPEG, PNG, GIF, WebP, max 5MB)
+- `description` (optional): Description of the thumbnail
+- `order` (optional): Display order (default: 0)
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "message": "Thumbnail created successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439020",
+    "title": "Mathematics Thumbnail",
+    "image": "https://your-bucket.s3.amazonaws.com/thumbnails/1234567890-mathematics-thumbnail.jpg",
+    "description": "Mathematics category thumbnail",
+    "order": 1,
+    "isActive": true,
+    "createdBy": "507f1f77bcf86cd799439011",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+---
+
+### 19. Get All Thumbnails (Super Admin)
+Get all thumbnails with pagination and filtering. (Protected - Super Admin only)
+
+**GET** `/thumbnails?page=1&limit=20&isActive=true&sortBy=order&sortOrder=asc`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+- `isActive` (optional): Filter by active status (`true`/`false`)
+- `sortBy` (optional): Sort field (default: `order`)
+- `sortOrder` (optional): Sort order (`asc`/`desc`, default: `asc`)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Thumbnails retrieved successfully",
+  "data": {
+    "thumbnails": [
+      {
+        "_id": "507f1f77bcf86cd799439020",
+        "title": "Mathematics Thumbnail",
+        "image": "https://your-bucket.s3.amazonaws.com/thumbnails/1234567890-mathematics-thumbnail.jpg",
+        "description": "Mathematics category thumbnail",
+        "order": 1,
+        "isActive": true,
+        "createdBy": {
+          "_id": "507f1f77bcf86cd799439011",
+          "userId": "ADGUSUP01",
+          "firstName": "Super",
+          "lastName": "Admin"
+        },
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 10,
+      "pages": 1
+    }
+  }
+}
+```
+
+---
+
+### 20. Get Thumbnail by ID (Super Admin)
+Get a specific thumbnail by ID. (Protected - Super Admin only)
+
+**GET** `/thumbnails/:id`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Thumbnail retrieved successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439020",
+    "title": "Mathematics Thumbnail",
+    "image": "https://your-bucket.s3.amazonaws.com/thumbnails/1234567890-mathematics-thumbnail.jpg",
+    "description": "Mathematics category thumbnail",
+    "order": 1,
+    "isActive": true,
+    "createdBy": {
+      "_id": "507f1f77bcf86cd799439011",
+      "userId": "ADGUSUP01",
+      "firstName": "Super",
+      "lastName": "Admin"
+    },
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+---
+
+### 21. Update Thumbnail
+Update thumbnail title, description, order, image, or active status. (Protected - Super Admin only)
+
+**PUT** `/thumbnails/:id`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `title` (optional): New title (must be unique)
+- `image` (optional): New image file (JPEG, PNG, GIF, WebP, max 5MB)
+- `description` (optional): New description
+- `order` (optional): New display order
+- `isActive` (optional): Active status (`true`/`false`)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Thumbnail updated successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439020",
+    "title": "Updated Mathematics Thumbnail",
+    "image": "https://your-bucket.s3.amazonaws.com/thumbnails/1234567891-updated-mathematics-thumbnail.jpg",
+    "description": "Updated description",
+    "order": 2,
+    "isActive": true,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T11:00:00.000Z"
+  }
+}
+```
+
+**Note:** 
+- When updating the image, the old image is automatically deleted from S3
+- New images are processed with reduced quality (60%) and resized to max 600x600px
+- All images are converted to JPEG format for consistency and smaller file size
+
+---
+
+### 22. Delete Thumbnail
+Delete a thumbnail and its image from S3. (Protected - Super Admin only)
+
+**DELETE** `/thumbnails/:id`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Thumbnail deleted successfully"
+}
+```
+
+**Note:** 
+- The image file is automatically deleted from S3 when the thumbnail is deleted
+- Thumbnails are optimized with 60% quality and max 600x600px dimensions for faster loading
+
+---
+
+### 17. Get User Details
 Get user details with optional decrypted password. (Protected - Super Admin only)
 
 **GET** `/user/:userId?includePassword=true`

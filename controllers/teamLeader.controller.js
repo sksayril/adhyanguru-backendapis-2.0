@@ -1,6 +1,7 @@
 const TeamLeader = require('../models/teamLeader.model');
 const FieldEmployee = require('../models/fieldEmployee.model');
 const District = require('../models/district.model');
+const WalletTransaction = require('../models/walletTransaction.model');
 const { encryptPassword, decryptPassword, comparePassword } = require('../services/passwordService');
 const { generateUserId, getNextSequenceNumber } = require('../services/userIdService');
 const { generateToken } = require('../middleware/auth');
@@ -55,6 +56,15 @@ const login = async (req, res) => {
 
     const token = generateToken(teamLeader);
 
+    // Ensure wallet exists with default values if not set
+    if (!teamLeader.wallet) {
+      teamLeader.wallet = {
+        balance: 0,
+        totalEarned: 0,
+        totalWithdrawn: 0
+      };
+    }
+
     res.json({
       success: true,
       message: 'Login successful',
@@ -68,7 +78,8 @@ const login = async (req, res) => {
           firstName: teamLeader.firstName,
           lastName: teamLeader.lastName,
           role: teamLeader.role,
-          profilePicture: teamLeader.profilePicture || null
+          profilePicture: teamLeader.profilePicture || null,
+          wallet: teamLeader.wallet
         }
       }
     });
@@ -76,6 +87,56 @@ const login = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Login failed',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get Team Leader Profile
+ */
+const getProfile = async (req, res) => {
+  try {
+    const tlId = req.user.userId;
+
+    const teamLeader = await TeamLeader.findById(tlId)
+      .populate('districtRef', 'name description areaRange boundingBox centerPoint')
+      .populate('createdBy', 'userId firstName lastName email mobileNumber profilePicture')
+      .populate('taskLevels', 'name description level registrationLimit globalRegistrationCount')
+      .populate('assignedByDistrictCoordinator', 'userId firstName lastName email mobileNumber profilePicture')
+      .populate('assignedFieldEmployees', 'userId firstName lastName email mobileNumber profilePicture district districtRef role');
+
+    if (!teamLeader) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team Leader not found'
+      });
+    }
+
+    // Ensure wallet exists with default values if not set
+    if (!teamLeader.wallet) {
+      teamLeader.wallet = {
+        balance: 0,
+        totalEarned: 0,
+        totalWithdrawn: 0
+      };
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile retrieved successfully',
+      data: {
+        ...teamLeader.toObject(),
+        taskLevels: teamLeader.taskLevels,
+        assignedByDistrictCoordinator: teamLeader.assignedByDistrictCoordinator,
+        assignedFieldEmployees: teamLeader.assignedFieldEmployees,
+        wallet: teamLeader.wallet
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving profile',
       error: error.message
     });
   }
@@ -211,35 +272,66 @@ const createFieldEmployee = async (req, res) => {
 
 /**
  * Get all field employees under team leader
+ * Returns created and assigned field employees
  */
 const getMyUsers = async (req, res) => {
   try {
     const tlId = req.user.userId; // This is the MongoDB _id
 
-    const fieldEmployees = await FieldEmployee.find({ createdBy: tlId })
+    const teamLeader = await TeamLeader.findById(tlId)
+      .populate('taskLevels', 'name description level registrationLimit globalRegistrationCount')
+      .populate('assignedFieldEmployees', 'userId firstName lastName email mobileNumber profilePicture district districtRef role');
+
+    const createdFieldEmployees = await FieldEmployee.find({ createdBy: tlId })
       .populate('districtRef', 'name description areaRange boundingBox centerPoint');
+
+    const users = createdFieldEmployees.map(user => ({
+      _id: user._id,
+      userId: user.userId,
+      email: user.email,
+      mobileNumber: user.mobileNumber,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      district: user.district || null,
+      districtRef: user.districtRef || null,
+      profilePicture: user.profilePicture || null,
+      latitude: user.latitude || null,
+      longitude: user.longitude || null,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      assignedBy: 'created'
+    }));
+
+    // Add assigned field employees
+    if (teamLeader.assignedFieldEmployees && teamLeader.assignedFieldEmployees.length > 0) {
+      teamLeader.assignedFieldEmployees.forEach(fe => {
+        users.push({
+          _id: fe._id,
+          userId: fe.userId,
+          email: fe.email,
+          mobileNumber: fe.mobileNumber,
+          firstName: fe.firstName,
+          lastName: fe.lastName,
+          role: fe.role,
+          district: fe.district || null,
+          districtRef: fe.districtRef || null,
+          profilePicture: fe.profilePicture || null,
+          assignedBy: 'assigned'
+        });
+      });
+    }
 
     res.json({
       success: true,
       message: 'Field employees retrieved successfully',
-      data: fieldEmployees.map(user => ({
-        _id: user._id,
-        userId: user.userId,
-        email: user.email,
-        mobileNumber: user.mobileNumber,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        district: user.district || null,
-        districtRef: user.districtRef || null,
-        profilePicture: user.profilePicture || null,
-        latitude: user.latitude || null,
-        longitude: user.longitude || null,
-        isActive: user.isActive,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
-      })),
-      count: fieldEmployees.length
+      data: users,
+      teamLeaderInfo: {
+        taskLevels: teamLeader.taskLevels,
+        assignedFieldEmployeesCount: teamLeader.assignedFieldEmployees ? teamLeader.assignedFieldEmployees.length : 0
+      },
+      count: users.length
     });
   } catch (error) {
     res.status(500).json({
@@ -309,10 +401,106 @@ const getFieldEmployeeDetails = async (req, res) => {
   }
 };
 
+/**
+ * Get Wallet Balance
+ */
+const getWalletBalance = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const teamLeader = await TeamLeader.findById(userId).select('userId firstName lastName wallet');
+
+    if (!teamLeader) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team leader not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Wallet balance retrieved successfully',
+      data: {
+        userId: teamLeader.userId,
+        name: `${teamLeader.firstName} ${teamLeader.lastName}`,
+        wallet: teamLeader.wallet || {
+          balance: 0,
+          totalEarned: 0,
+          totalWithdrawn: 0
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving wallet balance',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get Wallet Transactions
+ */
+const getWalletTransactions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { page = 1, limit = 20, type } = req.query;
+
+    const teamLeader = await TeamLeader.findById(userId);
+    if (!teamLeader) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team leader not found'
+      });
+    }
+
+    const query = {
+      user: teamLeader._id,
+      userModel: 'TeamLeader'
+    };
+
+    if (type) {
+      query.type = type;
+    }
+
+    const transactions = await WalletTransaction.find(query)
+      .populate('relatedTransaction.student', 'userId firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await WalletTransaction.countDocuments(query);
+
+    res.json({
+      success: true,
+      message: 'Wallet transactions retrieved successfully',
+      data: {
+        transactions,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving wallet transactions',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   login,
+  getProfile,
   createFieldEmployee,
   getMyUsers,
-  getFieldEmployeeDetails
+  getFieldEmployeeDetails,
+  getWalletBalance,
+  getWalletTransactions
 };
 

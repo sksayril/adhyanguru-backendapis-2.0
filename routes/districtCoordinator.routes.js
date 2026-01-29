@@ -28,5 +28,12 @@ router.get('/team-leader/:id', districtCoordinatorController.getTeamLeaderDetail
 // Get all users under district coordinator hierarchy
 router.get('/my-users', districtCoordinatorController.getMyUsers);
 
+// Dashboard endpoint
+router.get('/dashboard', districtCoordinatorController.getDashboard);
+
+// Wallet endpoints
+router.get('/wallet', districtCoordinatorController.getWalletBalance);
+router.get('/wallet/transactions', districtCoordinatorController.getWalletTransactions);
+
 module.exports = router;
 

@@ -77,6 +77,103 @@ Authorization: Bearer <token>
 
 ---
 
+### 3. Get Wallet Balance
+Get wallet balance and earnings information. (Protected)
+
+**GET** `/wallet`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Wallet balance retrieved successfully",
+  "data": {
+    "userId": "ADGUF01",
+    "name": "Field Employee",
+    "wallet": {
+      "balance": 150.50,
+      "totalEarned": 200.00,
+      "totalWithdrawn": 0
+    }
+  }
+}
+```
+
+---
+
+### 4. Get Wallet Transactions
+Get wallet transaction history with pagination. (Protected)
+
+**GET** `/wallet/transactions`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+- `type` (optional): Filter by transaction type (`COMMISSION`, `WITHDRAWAL`, `ADJUSTMENT`)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Wallet transactions retrieved successfully",
+  "data": {
+    "transactions": [
+      {
+        "_id": "507f1f77bcf86cd799439020",
+        "type": "COMMISSION",
+        "amount": 10.00,
+        "balanceAfter": 150.50,
+        "relatedTransaction": {
+          "type": "SUBSCRIPTION",
+          "transactionId": "507f1f77bcf86cd799439021",
+          "student": {
+            "userId": "ADGUSTU01",
+            "firstName": "John",
+            "lastName": "Doe"
+          },
+          "amount": 100
+        },
+        "commissionDetails": {
+          "percentage": 10,
+          "baseAmount": 100
+        },
+        "description": "Commission from subscription - 10 (10%)",
+        "status": "COMPLETED",
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 5,
+      "pages": 1
+    }
+  }
+}
+```
+
+**Note:** 
+- Field Employees receive commissions when students they referred purchase subscriptions or courses
+- The referral code is automatically generated when a Field Employee is created (format: `FE` + 6 alphanumeric characters)
+- Commission percentages are configurable by Super Admin through the Commission Settings API
+- Super Admin can create and update commission settings using `/api/super-admin/commission-settings` endpoints:
+  - `POST /api/super-admin/commission-settings` - Create initial commission settings
+  - `PUT /api/super-admin/commission-settings` - Update existing commission settings
+  - `GET /api/super-admin/commission-settings` - Get current commission settings
+- Default commission percentages: Coordinator 40%, District Coordinator 10%, Team Leader 10%, Field Employee 10%
+
+---
+
 ## Error Responses
 
 **401 Unauthorized:**

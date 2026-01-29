@@ -68,6 +68,38 @@ const fieldEmployeeSchema = new mongoose.Schema({
     default: USER_ROLES.FIELD_EMPLOYEE,
     immutable: true
   },
+  // Team Leader who assigned this field employee (for splitting)
+  assignedByTeamLeader: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TeamLeader',
+    default: null
+  },
+  // Referral code for this field employee (unique)
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    uppercase: true
+  },
+  // Wallet balance for commissions
+  wallet: {
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    totalEarned: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    totalWithdrawn: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
   isActive: {
     type: Boolean,
     default: true

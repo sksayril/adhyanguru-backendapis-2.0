@@ -4,7 +4,7 @@ const superAdminController = require('../controllers/superAdmin.controller');
 const adminController = require('../controllers/admin.controller');
 const { authenticate, authorizeCreate } = require('../middleware/auth');
 const { USER_ROLES } = require('../utils/constants');
-const { handleUpload } = require('../middleware/upload');
+const { handleUpload, handleImageUpload } = require('../middleware/upload');
 
 // Public routes
 router.post('/signup', handleUpload, superAdminController.signup);
@@ -36,6 +36,27 @@ router.get('/coordinator/:id', adminController.getCoordinatorDetails);
 router.put('/district/:districtId', adminController.updateDistrict);
 router.post('/district/assign', adminController.assignDistrictToCoordinator);
 router.post('/coordinator/area-range', adminController.assignAreaRangeToCoordinator);
+
+// Commission Settings Management
+router.get('/commission-settings', superAdminController.getCommissionSettings);
+router.post('/commission-settings', superAdminController.createCommissionSettings);
+router.put('/commission-settings', superAdminController.updateCommissionSettings);
+
+// Dashboard endpoint
+router.get('/dashboard', superAdminController.getDashboard);
+
+// Analytics endpoint
+router.get('/analytics', superAdminController.getAnalytics);
+
+// Health check endpoint
+router.get('/health', superAdminController.getHealthCheck);
+
+// Thumbnail Management (Protected - Super Admin only)
+router.post('/thumbnails', handleImageUpload, superAdminController.createThumbnail);
+router.get('/thumbnails', superAdminController.getAllThumbnails);
+router.get('/thumbnails/:id', superAdminController.getThumbnailById);
+router.put('/thumbnails/:id', handleImageUpload, superAdminController.updateThumbnail);
+router.delete('/thumbnails/:id', superAdminController.deleteThumbnail);
 
 module.exports = router;
 

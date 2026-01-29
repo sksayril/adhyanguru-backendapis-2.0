@@ -24,5 +24,15 @@ router.get('/my-users', coordinatorController.getMyUsers);
 // Get specific user details
 router.get('/user/:id', coordinatorController.getUserDetails);
 
+// Dashboard endpoint
+router.get('/dashboard', coordinatorController.getDashboard);
+
+// Get admin contact information for support
+router.get('/admin-contact', coordinatorController.getAdminContact);
+
+// Wallet endpoints
+router.get('/wallet', coordinatorController.getWalletBalance);
+router.get('/wallet/transactions', coordinatorController.getWalletTransactions);
+
 module.exports = router;
 

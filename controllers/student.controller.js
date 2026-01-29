@@ -19,6 +19,13 @@ const { USER_ROLES } = require('../utils/constants');
 const { processImage, getFileExtension } = require('../services/imageProcessingService');
 const { uploadToS3 } = require('../services/awsS3Service');
 const { createOrder, verifyPayment, getPaymentDetails, getOrderDetails } = require('../services/razorpayService');
+const { isValidReferralCodeFormat } = require('../services/referralCodeService');
+const { distributeCommissions } = require('../services/commissionService');
+const FieldEmployee = require('../models/fieldEmployee.model');
+const TeamLeader = require('../models/teamLeader.model');
+const DistrictCoordinator = require('../models/districtCoordinator.model');
+const Coordinator = require('../models/coordinator.model');
+const Admin = require('../models/admin.model');
 
 /**
  * Student Signup
@@ -36,7 +43,8 @@ const signup = async (req, res) => {
       longitude,
       address,
       pincode,
-      fieldEmployeeCode
+      fieldEmployeeCode,
+      referralCode
     } = req.body;
 
     // Validation
@@ -140,6 +148,105 @@ const signup = async (req, res) => {
     // Encrypt password
     const encryptedPassword = encryptPassword(password);
 
+    // Handle referral code and build hierarchy
+    let referralHierarchy = {
+      referringFieldEmployee: null,
+      teamLeader: null,
+      districtCoordinator: null,
+      coordinator: null,
+      admin: null
+    };
+
+    // Use referralCode if provided, otherwise fall back to fieldEmployeeCode for backward compatibility
+    const codeToUse = referralCode || fieldEmployeeCode;
+    
+    if (codeToUse) {
+      const code = codeToUse.trim().toUpperCase();
+      
+      // Validate referral code format
+      if (!isValidReferralCodeFormat(code)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid referral code format. Referral code must be in format FE followed by 6 alphanumeric characters.'
+        });
+      }
+      
+      // Find Field Employee by referral code
+      const fieldEmployee = await FieldEmployee.findOne({ 
+        referralCode: code,
+        isActive: true 
+      });
+      
+      if (!fieldEmployee) {
+        return res.status(404).json({
+          success: false,
+          message: 'Invalid referral code. Field Employee not found or inactive.'
+        });
+      }
+      
+      // Set referring Field Employee
+      referralHierarchy.referringFieldEmployee = fieldEmployee._id;
+      
+      // Traverse up the hierarchy
+      // Get Team Leader
+      if (fieldEmployee.assignedByTeamLeader) {
+        const teamLeader = await TeamLeader.findById(fieldEmployee.assignedByTeamLeader)
+          .populate('assignedByDistrictCoordinator');
+        
+        if (teamLeader && teamLeader.isActive) {
+          referralHierarchy.teamLeader = teamLeader._id;
+          
+          // Get District Coordinator
+          if (teamLeader.assignedByDistrictCoordinator) {
+            const districtCoordinator = await DistrictCoordinator.findById(teamLeader.assignedByDistrictCoordinator)
+              .populate('assignedByCoordinator');
+            
+            if (districtCoordinator && districtCoordinator.isActive) {
+              referralHierarchy.districtCoordinator = districtCoordinator._id;
+              
+              // Get Coordinator
+              if (districtCoordinator.assignedByCoordinator) {
+                const coordinator = await Coordinator.findById(districtCoordinator.assignedByCoordinator)
+                  .populate('createdBy');
+                
+                if (coordinator && coordinator.isActive) {
+                  referralHierarchy.coordinator = coordinator._id;
+                  
+                  // Note: Coordinator's createdBy can be DistrictCoordinator or Admin
+                  // We need to check if it's an Admin
+                  if (coordinator.createdBy) {
+                    // Check if createdBy is an Admin (not DistrictCoordinator)
+                    const createdByUser = await Admin.findById(coordinator.createdBy);
+                    if (createdByUser && createdByUser.isActive) {
+                      referralHierarchy.admin = createdByUser._id;
+                    } else {
+                      // If createdBy is DistrictCoordinator, we need to go further up
+                      const parentDC = await DistrictCoordinator.findById(coordinator.createdBy)
+                        .populate('createdBy');
+                      if (parentDC && parentDC.createdBy) {
+                        const admin = await Admin.findById(parentDC.createdBy);
+                        if (admin && admin.isActive) {
+                          referralHierarchy.admin = admin._id;
+                        }
+                      }
+                    }
+                  }
+                }
+              } else {
+                // District Coordinator might be created by Admin directly
+                if (districtCoordinator.createdBy) {
+                  const admin = await Admin.findById(districtCoordinator.createdBy);
+                  if (admin && admin.isActive) {
+                    referralHierarchy.admin = admin._id;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Handle profile picture upload if provided
     let profilePictureUrl = null;
     if (req.file) {
@@ -175,7 +282,8 @@ const signup = async (req, res) => {
       longitude: longitude ? parseFloat(longitude) : null,
       address: address ? address.trim() : null,
       pincode: pincode ? pincode.trim() : null,
-      fieldEmployeeCode: fieldEmployeeCode ? fieldEmployeeCode.trim() : null
+      fieldEmployeeCode: codeToUse ? codeToUse.trim() : (fieldEmployeeCode ? fieldEmployeeCode.trim() : null),
+      referralHierarchy
     });
 
     await student.save();
@@ -1662,6 +1770,17 @@ const verifyPaymentAndActivate = async (req, res) => {
     subscription.isActive = true;
     await subscription.save();
 
+    // Distribute commissions asynchronously (don't block the response)
+    distributeCommissions(
+      subscription.student,
+      subscription.amount,
+      'SUBSCRIPTION',
+      subscription._id
+    ).catch(error => {
+      console.error('Error distributing commissions for subscription:', error);
+      // Log error but don't fail the payment verification
+    });
+
     res.json({
       success: true,
       message: 'Payment verified and subscription activated successfully',
@@ -2141,6 +2260,17 @@ const verifyCoursePurchase = async (req, res) => {
     purchase.razorpaySignature = razorpaySignature;
     purchase.paymentStatus = 'COMPLETED';
     await purchase.save();
+
+    // Distribute commissions asynchronously (don't block the response)
+    distributeCommissions(
+      purchase.student,
+      purchase.amount,
+      'COURSE_PURCHASE',
+      purchase._id
+    ).catch(error => {
+      console.error('Error distributing commissions for course purchase:', error);
+      // Log error but don't fail the payment verification
+    });
 
     res.json({
       success: true,

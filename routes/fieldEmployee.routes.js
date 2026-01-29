@@ -12,5 +12,9 @@ router.use(authenticate); // All routes below require authentication
 // Get own profile
 router.get('/profile', fieldEmployeeController.getMyProfile);
 
+// Wallet endpoints
+router.get('/wallet', fieldEmployeeController.getWalletBalance);
+router.get('/wallet/transactions', fieldEmployeeController.getWalletTransactions);
+
 module.exports = router;
 

@@ -1,4 +1,5 @@
 const FieldEmployee = require('../models/fieldEmployee.model');
+const WalletTransaction = require('../models/walletTransaction.model');
 const { comparePassword } = require('../services/passwordService');
 const { generateToken } = require('../middleware/auth');
 
@@ -105,8 +106,103 @@ const getMyProfile = async (req, res) => {
   }
 };
 
+/**
+ * Get Wallet Balance
+ */
+const getWalletBalance = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const fieldEmployee = await FieldEmployee.findById(userId).select('userId firstName lastName wallet');
+
+    if (!fieldEmployee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Field employee not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Wallet balance retrieved successfully',
+      data: {
+        userId: fieldEmployee.userId,
+        name: `${fieldEmployee.firstName} ${fieldEmployee.lastName}`,
+        wallet: fieldEmployee.wallet || {
+          balance: 0,
+          totalEarned: 0,
+          totalWithdrawn: 0
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving wallet balance',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get Wallet Transactions
+ */
+const getWalletTransactions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { page = 1, limit = 20, type } = req.query;
+
+    const fieldEmployee = await FieldEmployee.findById(userId);
+    if (!fieldEmployee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Field employee not found'
+      });
+    }
+
+    const query = {
+      user: fieldEmployee._id,
+      userModel: 'FieldEmployee'
+    };
+
+    if (type) {
+      query.type = type;
+    }
+
+    const transactions = await WalletTransaction.find(query)
+      .populate('relatedTransaction.student', 'userId firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await WalletTransaction.countDocuments(query);
+
+    res.json({
+      success: true,
+      message: 'Wallet transactions retrieved successfully',
+      data: {
+        transactions,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving wallet transactions',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   login,
-  getMyProfile
+  getMyProfile,
+  getWalletBalance,
+  getWalletTransactions
 };
 

@@ -32,5 +32,25 @@ router.put('/district/:districtId', adminController.updateDistrict);
 router.post('/district/assign', adminController.assignDistrictToCoordinator);
 router.post('/coordinator/area-range', adminController.assignAreaRangeToCoordinator);
 
+// Task Level Management (Admin and Super Admin)
+router.post('/task-level', adminController.createTaskLevel);
+router.get('/task-levels', adminController.getTaskLevels);
+router.put('/task-level/:taskLevelId', adminController.updateTaskLevel);
+
+// Task Level Assignment
+router.post('/coordinator/task-levels', adminController.assignTaskLevelsToCoordinator);
+router.post('/district-coordinator/task-levels', adminController.assignTaskLevelsToDistrictCoordinator);
+router.post('/team-leader/task-levels', adminController.assignTaskLevelsToTeamLeader);
+
+// Registration Limits
+router.post('/coordinator/registration-limits', adminController.setCoordinatorRegistrationLimits);
+router.post('/task-level/registration-limit', adminController.setTaskLevelRegistrationLimit);
+router.post('/coordinator/task-level/registration-limit', adminController.setTaskLevelRegistrationLimitForCoordinator);
+
+// Distribution/Splitting
+router.post('/coordinator/assign-district-coordinators', adminController.assignDistrictCoordinatorsToCoordinator);
+router.post('/district-coordinator/assign-team-leaders', adminController.assignTeamLeadersToDistrictCoordinator);
+router.post('/team-leader/assign-field-employees', adminController.assignFieldEmployeesToTeamLeader);
+
 module.exports = router;
 
