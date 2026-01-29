@@ -5,10 +5,13 @@ const { v4: uuidv4 } = require('uuid');
 const s3 = new AWS.S3({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'ap-south-1'
 });
 
-const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME;
+const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "adhyangurubucket";
+if (!process.env.AWS_S3_BUCKET_NAME && process.env.AWS_S3_BUCKET) {
+  console.warn('Using AWS_S3_BUCKET from environment. Consider setting AWS_S3_BUCKET_NAME for consistency.');
+}
 
 /**
  * Upload file to AWS S3
@@ -21,7 +24,7 @@ const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME;
 const uploadToS3 = async (fileBuffer, fileName, contentType, folder = 'profile-pictures') => {
   try {
     if (!BUCKET_NAME) {
-      throw new Error('AWS_S3_BUCKET_NAME is not configured');
+      throw new Error('AWS S3 bucket is not configured. Set AWS_S3_BUCKET_NAME or AWS_S3_BUCKET in environment variables');
     }
 
     // Generate unique file name
