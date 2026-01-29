@@ -8,8 +8,8 @@ const s3 = new AWS.S3({
   region: process.env.AWS_REGION || 'ap-south-1'
 });
 
-const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "adhyangurubucket";
-if (!process.env.AWS_S3_BUCKET_NAME && process.env.AWS_S3_BUCKET) {
+const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET;
+if (process.env.AWS_S3_BUCKET && !process.env.AWS_S3_BUCKET_NAME) {
   console.warn('Using AWS_S3_BUCKET from environment. Consider setting AWS_S3_BUCKET_NAME for consistency.');
 }
 
@@ -36,9 +36,13 @@ const uploadToS3 = async (fileBuffer, fileName, contentType, folder = 'profile-p
       Bucket: BUCKET_NAME,
       Key: key,
       Body: fileBuffer,
-      ContentType: contentType,
-      ACL: 'public-read' // Make file publicly accessible
+      ContentType: contentType
     };
+
+    // Add ACL only if explicitly enabled via env var (some buckets disallow ACLs)
+    if (process.env.AWS_S3_USE_ACL === 'true') {
+      params.ACL = 'public-read';
+    }
 
     // Upload to S3
     const result = await s3.upload(params).promise();
