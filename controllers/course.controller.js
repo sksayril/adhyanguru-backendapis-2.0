@@ -325,8 +325,34 @@ const createCourseChapter = async (req, res) => {
       try {
         const pdfFile = req.files.pdf[0];
         const fileName = `course-chapter-${Date.now()}-${title.trim().replace(/\s+/g, '-')}.pdf`;
-        pdfUrl = await uploadToS3(pdfFile.buffer, fileName, pdfFile.mimetype, 'course-pdfs');
+        
+        // Handle file from disk storage (handleMultipleUpload uses diskStorage)
+        const fs = require('fs');
+        let pdfBody;
+        if (pdfFile.path) {
+          // File is on disk, read it as a stream
+          pdfBody = fs.createReadStream(pdfFile.path);
+        } else if (pdfFile.buffer) {
+          // File is in memory (buffer)
+          pdfBody = pdfFile.buffer;
+        } else {
+          throw new Error('PDF file data not found');
+        }
+        
+        pdfUrl = await uploadToS3(pdfBody, fileName, pdfFile.mimetype, 'course-pdfs');
+        
+        // Clean up temp file if it was on disk
+        if (pdfFile.path) {
+          fs.unlink(pdfFile.path, (err) => {
+            if (err) console.error('Error deleting temp PDF file:', err);
+          });
+        }
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.pdf[0] && req.files.pdf[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.pdf[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading PDF',
@@ -340,9 +366,43 @@ const createCourseChapter = async (req, res) => {
     if (req.files && req.files.video && req.files.video[0]) {
       try {
         const videoFile = req.files.video[0];
-        const fileName = `course-chapter-${Date.now()}-${title.trim().replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
-        videoUrl = await uploadToS3(videoFile.buffer, fileName, videoFile.mimetype, 'course-videos');
+        
+        // Check if video was already uploaded to S3 by middleware
+        if (videoFile.s3Url) {
+          // Video already uploaded by middleware, just use the URL
+          videoUrl = videoFile.s3Url;
+        } else {
+          // Video not uploaded yet, need to upload it
+          const fileName = `course-chapter-${Date.now()}-${title.trim().replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
+          
+          // Handle file from disk storage
+          const fs = require('fs');
+          let videoBody;
+          if (videoFile.path) {
+            // File is on disk, read it as a stream
+            videoBody = fs.createReadStream(videoFile.path);
+          } else if (videoFile.buffer) {
+            // File is in memory (buffer)
+            videoBody = videoFile.buffer;
+          } else {
+            throw new Error('Video file data not found');
+          }
+          
+          videoUrl = await uploadToS3(videoBody, fileName, videoFile.mimetype, 'course-videos');
+          
+          // Clean up temp file if it was on disk
+          if (videoFile.path) {
+            fs.unlink(videoFile.path, (err) => {
+              if (err) console.error('Error deleting temp video file:', err);
+            });
+          }
+        }
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.video[0] && req.files.video[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.video[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading video',
@@ -507,8 +567,35 @@ const updateCourseChapter = async (req, res) => {
 
         const pdfFile = req.files.pdf[0];
         const fileName = `course-chapter-${Date.now()}-${chapter.title.trim().replace(/\s+/g, '-')}.pdf`;
-        chapter.content.pdf = await uploadToS3(pdfFile.buffer, fileName, pdfFile.mimetype, 'course-pdfs');
+        
+        // Handle file from disk storage (handleMultipleUpload uses diskStorage)
+        let pdfBody;
+        if (pdfFile.path) {
+          // File is on disk, read it as a stream
+          const fs = require('fs');
+          pdfBody = fs.createReadStream(pdfFile.path);
+        } else if (pdfFile.buffer) {
+          // File is in memory (buffer)
+          pdfBody = pdfFile.buffer;
+        } else {
+          throw new Error('PDF file data not found');
+        }
+        
+        chapter.content.pdf = await uploadToS3(pdfBody, fileName, pdfFile.mimetype, 'course-pdfs');
+        
+        // Clean up temp file if it was on disk
+        if (pdfFile.path) {
+          const fs = require('fs');
+          fs.unlink(pdfFile.path, (err) => {
+            if (err) console.error('Error deleting temp PDF file:', err);
+          });
+        }
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.pdf[0] && req.files.pdf[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.pdf[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading PDF',
@@ -520,19 +607,62 @@ const updateCourseChapter = async (req, res) => {
     // Handle Video update if provided
     if (req.files && req.files.video && req.files.video[0]) {
       try {
-        // Delete old video from S3 if exists
-        if (chapter.content.video) {
-          try {
-            await deleteFromS3(chapter.content.video);
-          } catch (error) {
-            console.error('Error deleting old video:', error);
+        const videoFile = req.files.video[0];
+        
+        // Check if video was already uploaded to S3 by middleware
+        if (videoFile.s3Url) {
+          // Video already uploaded by middleware, just use the URL
+          // Delete old video from S3 if exists
+          if (chapter.content.video) {
+            try {
+              await deleteFromS3(chapter.content.video);
+            } catch (error) {
+              console.error('Error deleting old video:', error);
+            }
+          }
+          chapter.content.video = videoFile.s3Url;
+        } else {
+          // Video not uploaded yet, need to upload it
+          // Delete old video from S3 if exists
+          if (chapter.content.video) {
+            try {
+              await deleteFromS3(chapter.content.video);
+            } catch (error) {
+              console.error('Error deleting old video:', error);
+            }
+          }
+
+          const fileName = `course-chapter-${Date.now()}-${chapter.title.trim().replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
+          
+          // Handle file from disk storage
+          let videoBody;
+          if (videoFile.path) {
+            // File is on disk, read it as a stream
+            const fs = require('fs');
+            videoBody = fs.createReadStream(videoFile.path);
+          } else if (videoFile.buffer) {
+            // File is in memory (buffer)
+            videoBody = videoFile.buffer;
+          } else {
+            throw new Error('Video file data not found');
+          }
+          
+          chapter.content.video = await uploadToS3(videoBody, fileName, videoFile.mimetype, 'course-videos');
+          
+          // Clean up temp file if it was on disk
+          if (videoFile.path) {
+            const fs = require('fs');
+            fs.unlink(videoFile.path, (err) => {
+              if (err) console.error('Error deleting temp video file:', err);
+            });
           }
         }
-
-        const videoFile = req.files.video[0];
-        const fileName = `course-chapter-${Date.now()}-${chapter.title.trim().replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
-        chapter.content.video = await uploadToS3(videoFile.buffer, fileName, videoFile.mimetype, 'course-videos');
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.video[0] && req.files.video[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.video[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading video',

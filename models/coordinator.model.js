@@ -191,7 +191,7 @@ const coordinatorSchema = new mongoose.Schema({
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'DistrictCoordinator',
+    ref: 'Admin',
     required: true
   },
   createdAt: {

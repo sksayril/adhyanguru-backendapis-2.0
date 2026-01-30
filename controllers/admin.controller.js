@@ -1001,12 +1001,15 @@ const assignAreaRangeToCoordinator = async (req, res) => {
 };
 
 /**
- * Get all District Coordinators
+ * Get all District Coordinators (under admin's hierarchy)
  */
 const getDistrictCoordinators = async (req, res) => {
   try {
+    const adminId = req.user.userId;
     const { isActive } = req.query;
-    const query = {};
+    const query = {
+      createdBy: adminId // Only district coordinators created by this admin
+    };
 
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
@@ -1099,27 +1102,75 @@ const getDistrictCoordinatorDetails = async (req, res) => {
 };
 
 /**
- * Get all Coordinators
+ * Get all Coordinators (under admin's hierarchy)
  */
 const getCoordinators = async (req, res) => {
   try {
+    const adminId = req.user.userId;
     const { isActive } = req.query;
-    const query = {};
+
+    // Get all district coordinators created by this admin
+    const districtCoordinatorsUnderAdmin = await DistrictCoordinator.find({ 
+      createdBy: adminId 
+    }).select('_id').lean();
+    
+    const districtCoordinatorIds = districtCoordinatorsUnderAdmin.map(dc => dc._id);
+
+    // Build query to get coordinators under admin's hierarchy:
+    // 1. Coordinators created directly by admin
+    // 2. Coordinators created by district coordinators under this admin
+    // 3. Coordinators assigned to district coordinators under this admin
+    const coordinatorQuery = {
+      $or: [
+        { createdBy: adminId }, // Created directly by admin
+        { createdBy: { $in: districtCoordinatorIds } }, // Created by district coordinators under admin
+        { assignedDistrictCoordinators: { $in: districtCoordinatorIds } } // Assigned to district coordinators under admin
+      ]
+    };
 
     if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
+      coordinatorQuery.isActive = isActive === 'true';
     }
 
-    const coordinators = await Coordinator.find(query)
+    const coordinators = await Coordinator.find(coordinatorQuery)
       .populate('districtRef', 'name description areaRange boundingBox centerPoint')
-      .populate('createdBy', 'userId firstName lastName email mobileNumber')
+      .populate({
+        path: 'createdBy',
+        select: 'userId firstName lastName email mobileNumber role',
+        populate: {
+          path: 'createdBy',
+          select: '_id userId firstName lastName email mobileNumber role'
+        }
+      })
+      .populate('assignedDistrictCoordinators', 'userId firstName lastName email mobileNumber')
       .sort({ createdAt: -1 });
+
+    // Add metadata to show creation relationship
+    const coordinatorsWithMetadata = coordinators.map(coord => {
+      const coordData = coord.toObject();
+      
+      // Determine if created by admin or district coordinator
+      if (coord.createdBy) {
+        const createdById = coord.createdBy._id ? coord.createdBy._id.toString() : coord.createdBy.toString();
+        if (createdById === adminId.toString()) {
+          coordData.createdByType = 'ADMIN';
+          coordData.createdByAdmin = true;
+        } else if (coord.createdBy.role === 'DISTRICT_COORDINATOR' || 
+                   (coord.createdBy.createdBy && coord.createdBy.createdBy._id && 
+                    coord.createdBy.createdBy._id.toString() === adminId.toString())) {
+          coordData.createdByType = 'DISTRICT_COORDINATOR';
+          coordData.createdByAdmin = false;
+        }
+      }
+      
+      return coordData;
+    });
 
     res.json({
       success: true,
       message: 'Coordinators retrieved successfully',
-      data: coordinators,
-      count: coordinators.length
+      data: coordinatorsWithMetadata,
+      count: coordinatorsWithMetadata.length
     });
   } catch (error) {
     res.status(500).json({
@@ -1986,6 +2037,739 @@ const assignFieldEmployeesToTeamLeader = async (req, res) => {
   }
 };
 
+/**
+ * Get Coordinator Wallet Balance and Registration Counts (Admin)
+ * Get coordinator details including wallet balance and student registration counts
+ */
+const getCoordinatorWalletAndRegistrations = async (req, res) => {
+  try {
+    const adminId = req.user.userId;
+    const { id } = req.params;
+    const mongoose = require('mongoose');
+    const Student = require('../models/student.model');
+
+    // Check if id is a valid MongoDB ObjectId
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    const searchQuery = isValidObjectId 
+      ? { $or: [{ _id: id }, { userId: id }] }
+      : { userId: id };
+
+    const coordinator = await Coordinator.findOne(searchQuery)
+      .populate({
+        path: 'createdBy',
+        select: 'userId firstName lastName email mobileNumber role createdBy',
+        populate: {
+          path: 'createdBy',
+          select: '_id'
+        }
+      })
+      .populate({
+        path: 'assignedDistrictCoordinators',
+        select: 'createdBy',
+        populate: {
+          path: 'createdBy',
+          select: '_id'
+        }
+      })
+      .populate('taskLevels.taskLevel', 'name description level registrationLimit globalRegistrationCount');
+
+    if (!coordinator) {
+      return res.status(404).json({
+        success: false,
+        message: 'Coordinator not found'
+      });
+    }
+
+    // Verify coordinator is under this admin's hierarchy
+    // Use the same logic as getCoordinators to ensure consistency
+    let hasPermission = false;
+
+    // Get all district coordinators created by this admin
+    const districtCoordinatorsUnderAdmin = await DistrictCoordinator.find({ 
+      createdBy: adminId 
+    }).select('_id').lean();
+    
+    const districtCoordinatorIds = districtCoordinatorsUnderAdmin.map(dc => dc._id.toString());
+
+    // Get coordinator's createdBy ID (handle both populated and unpopulated)
+    const coordinatorCreatedById = coordinator.createdBy 
+      ? (coordinator.createdBy._id ? coordinator.createdBy._id.toString() : coordinator.createdBy.toString())
+      : null;
+
+    const coordinatorIdStr = coordinator._id.toString();
+    const adminIdStr = adminId.toString();
+
+    // Check 1: Coordinator created directly by admin
+    if (coordinatorCreatedById === adminIdStr) {
+      hasPermission = true;
+    }
+
+    // Check 2: Coordinator created by a district coordinator under this admin
+    if (!hasPermission && coordinatorCreatedById && districtCoordinatorIds.includes(coordinatorCreatedById)) {
+      hasPermission = true;
+    }
+
+    // Check 3: Check if coordinator's createdBy is a DistrictCoordinator created by this admin (direct DB check)
+    if (!hasPermission && coordinatorCreatedById) {
+      const districtCoordinator = await DistrictCoordinator.findOne({
+        _id: coordinatorCreatedById,
+        createdBy: adminId
+      }).select('_id').lean();
+      
+      if (districtCoordinator) {
+        hasPermission = true;
+      }
+    }
+
+    // Check 4: Coordinator assigned to district coordinators under this admin
+    if (!hasPermission && coordinator.assignedDistrictCoordinators && coordinator.assignedDistrictCoordinators.length > 0) {
+      const assignedDCIds = coordinator.assignedDistrictCoordinators.map(dc => {
+        if (dc._id) return dc._id.toString();
+        if (typeof dc === 'string') return dc;
+        return dc.toString();
+      });
+      
+      // Check if any assigned district coordinator is under this admin
+      for (const dcId of assignedDCIds) {
+        if (districtCoordinatorIds.includes(dcId)) {
+          hasPermission = true;
+          break;
+        }
+      }
+    }
+
+    // Check 5: Get all coordinators under admin using the same query as getCoordinators
+    if (!hasPermission) {
+      const coordinatorQuery = {
+        $or: [
+          { createdBy: adminId },
+          { createdBy: { $in: districtCoordinatorIds.map(id => new mongoose.Types.ObjectId(id)) } },
+          { assignedDistrictCoordinators: { $in: districtCoordinatorIds.map(id => new mongoose.Types.ObjectId(id)) } }
+        ]
+      };
+
+      const coordinatorsUnderAdmin = await Coordinator.find(coordinatorQuery)
+        .select('_id')
+        .lean();
+      
+      const coordinatorIdsUnderAdmin = coordinatorsUnderAdmin.map(c => c._id.toString());
+      
+      if (coordinatorIdsUnderAdmin.includes(coordinatorIdStr)) {
+        hasPermission = true;
+      }
+    }
+
+    // Check 6: Check if there are students under this coordinator with admin in referral hierarchy
+    if (!hasPermission) {
+      const studentWithAdmin = await Student.findOne({
+        'referralHierarchy.coordinator': coordinator._id,
+        'referralHierarchy.admin': adminId
+      }).limit(1);
+
+      if (studentWithAdmin) {
+        hasPermission = true;
+      }
+    }
+
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to view this coordinator. Coordinator is not under your hierarchy.',
+        debug: {
+          coordinatorId: coordinatorIdStr,
+          coordinatorCreatedById: coordinatorCreatedById,
+          adminId: adminIdStr,
+          districtCoordinatorIds: districtCoordinatorIds
+        }
+      });
+    }
+
+    // Get wallet balance (ensure it exists)
+    const wallet = coordinator.wallet || {
+      balance: 0,
+      totalEarned: 0,
+      totalWithdrawn: 0
+    };
+
+    // Count students under this coordinator through referral hierarchy
+    const studentCount = await Student.countDocuments({
+      'referralHierarchy.coordinator': coordinator._id
+    });
+
+    // Get registration counts
+    const registrationCounts = {
+      level1: coordinator.registrationCounts?.level1 || 0,
+      level2: coordinator.registrationCounts?.level2 || 0,
+      taskLevels: coordinator.taskLevels?.map(tl => ({
+        taskLevel: tl.taskLevel,
+        registrationLimit: tl.registrationLimit || 0,
+        registrationCount: tl.registrationCount || 0
+      })) || []
+    };
+
+    res.json({
+      success: true,
+      message: 'Coordinator wallet and registration data retrieved successfully',
+      data: {
+        _id: coordinator._id,
+        userId: coordinator.userId,
+        firstName: coordinator.firstName,
+        lastName: coordinator.lastName,
+        email: coordinator.email,
+        mobileNumber: coordinator.mobileNumber,
+        wallet: {
+          balance: wallet.balance || 0,
+          totalEarned: wallet.totalEarned || 0,
+          totalWithdrawn: wallet.totalWithdrawn || 0
+        },
+        studentRegistrations: {
+          total: studentCount,
+          level1: registrationCounts.level1,
+          level2: registrationCounts.level2,
+          taskLevels: registrationCounts.taskLevels
+        },
+        createdBy: coordinator.createdBy,
+        isActive: coordinator.isActive
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving coordinator wallet and registration data',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get District Coordinator Wallet Balance and Registration Counts (Admin)
+ * Get district coordinator details including wallet balance and student registration counts
+ */
+const getDistrictCoordinatorWalletAndRegistrations = async (req, res) => {
+  try {
+    const adminId = req.user.userId;
+    const { id } = req.params;
+    const mongoose = require('mongoose');
+    const Student = require('../models/student.model');
+
+    // Check if id is a valid MongoDB ObjectId
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    const searchQuery = isValidObjectId 
+      ? { $or: [{ _id: id }, { userId: id }] }
+      : { userId: id };
+
+    const districtCoordinator = await DistrictCoordinator.findOne(searchQuery)
+      .populate('createdBy', 'userId firstName lastName email mobileNumber')
+      .populate('assignedByCoordinator', 'userId firstName lastName email mobileNumber createdBy');
+
+    if (!districtCoordinator) {
+      return res.status(404).json({
+        success: false,
+        message: 'District Coordinator not found'
+      });
+    }
+
+    // Verify district coordinator is under this admin's hierarchy
+    // Check multiple paths similar to coordinator check
+    let hasPermission = false;
+
+    const districtCoordinatorIdStr = districtCoordinator._id.toString();
+    const adminIdStr = adminId.toString();
+
+    // Get district coordinator's createdBy ID (handle both populated and unpopulated)
+    const districtCoordinatorCreatedById = districtCoordinator.createdBy 
+      ? (districtCoordinator.createdBy._id ? districtCoordinator.createdBy._id.toString() : districtCoordinator.createdBy.toString())
+      : null;
+
+    // Check 1: District coordinator created directly by admin
+    if (districtCoordinatorCreatedById === adminIdStr) {
+      hasPermission = true;
+    }
+
+    // Check 2: District coordinator assigned to a coordinator under this admin
+    if (!hasPermission && districtCoordinator.assignedByCoordinator) {
+      const coordinator = districtCoordinator.assignedByCoordinator;
+      const coordinatorCreatedById = coordinator.createdBy 
+        ? (coordinator.createdBy._id ? coordinator.createdBy._id.toString() : coordinator.createdBy.toString())
+        : null;
+
+      // Check if coordinator was created directly by admin
+      if (coordinatorCreatedById === adminIdStr) {
+        hasPermission = true;
+      }
+
+      // Check if coordinator was created by a district coordinator under this admin
+      if (!hasPermission && coordinatorCreatedById) {
+        const parentDC = await DistrictCoordinator.findOne({
+          _id: coordinatorCreatedById,
+          createdBy: adminId
+        }).select('_id').lean();
+        
+        if (parentDC) {
+          hasPermission = true;
+        }
+      }
+    }
+
+    // Check 3: Get all district coordinators under admin and verify if this one is in the list
+    if (!hasPermission) {
+      const districtCoordinatorsUnderAdmin = await DistrictCoordinator.find({ 
+        createdBy: adminId 
+      }).select('_id').lean();
+      
+      const districtCoordinatorIds = districtCoordinatorsUnderAdmin.map(dc => dc._id.toString());
+      
+      if (districtCoordinatorIds.includes(districtCoordinatorIdStr)) {
+        hasPermission = true;
+      }
+    }
+
+    // Check 4: Check if there are students under this district coordinator with admin in referral hierarchy
+    if (!hasPermission) {
+      const studentWithAdmin = await Student.findOne({
+        'referralHierarchy.districtCoordinator': districtCoordinator._id,
+        'referralHierarchy.admin': adminId
+      }).limit(1);
+
+      if (studentWithAdmin) {
+        hasPermission = true;
+      }
+    }
+
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to view this district coordinator. District coordinator is not under your hierarchy.',
+        debug: {
+          districtCoordinatorId: districtCoordinatorIdStr,
+          districtCoordinatorCreatedById: districtCoordinatorCreatedById,
+          adminId: adminIdStr
+        }
+      });
+    }
+
+    // Get wallet balance (ensure it exists)
+    const wallet = districtCoordinator.wallet || {
+      balance: 0,
+      totalEarned: 0,
+      totalWithdrawn: 0
+    };
+
+    // Count students under this district coordinator through referral hierarchy
+    const studentCount = await Student.countDocuments({
+      'referralHierarchy.districtCoordinator': districtCoordinator._id
+    });
+
+    // Count coordinators under this district coordinator
+    const coordinatorCount = await Coordinator.countDocuments({
+      createdBy: districtCoordinator._id
+    });
+
+    res.json({
+      success: true,
+      message: 'District Coordinator wallet and registration data retrieved successfully',
+      data: {
+        _id: districtCoordinator._id,
+        userId: districtCoordinator.userId,
+        firstName: districtCoordinator.firstName,
+        lastName: districtCoordinator.lastName,
+        email: districtCoordinator.email,
+        mobileNumber: districtCoordinator.mobileNumber,
+        district: districtCoordinator.district,
+        wallet: {
+          balance: wallet.balance || 0,
+          totalEarned: wallet.totalEarned || 0,
+          totalWithdrawn: wallet.totalWithdrawn || 0
+        },
+        studentRegistrations: {
+          total: studentCount
+        },
+        coordinatorsUnder: coordinatorCount,
+        createdBy: districtCoordinator.createdBy,
+        isActive: districtCoordinator.isActive
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving district coordinator wallet and registration data',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get Admin Dashboard
+ * Comprehensive dashboard with user counts, subscriptions, active/inactive users, and more
+ * Note: No amount-based data is included as per requirements
+ */
+const getDashboard = async (req, res) => {
+  try {
+    const adminId = req.user.userId; // This is the MongoDB _id
+    const { period = '30' } = req.query; // Period in days (default: 30 days)
+    const periodDays = parseInt(period);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - periodDays);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
+
+    // Date for inactive users (10 days ago)
+    const inactiveThresholdDate = new Date();
+    inactiveThresholdDate.setDate(inactiveThresholdDate.getDate() - 10);
+    inactiveThresholdDate.setHours(0, 0, 0, 0);
+
+    // Get admin document
+    const admin = await Admin.findById(adminId);
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    // Import required models
+    const Student = require('../models/student.model');
+    const StudentSubscription = require('../models/studentSubscription.model');
+    const FieldManager = require('../models/fieldManager.model');
+
+    // Get all district coordinators created by this admin
+    const districtCoordinators = await DistrictCoordinator.find({ createdBy: adminId }).lean();
+    const districtCoordinatorIds = districtCoordinators.map(dc => dc._id);
+
+    // Get all coordinators under district coordinators
+    const coordinators = await Coordinator.find({ 
+      createdBy: { $in: districtCoordinatorIds } 
+    }).lean();
+    const coordinatorIds = coordinators.map(c => c._id);
+
+    // Get all field managers under coordinators
+    const fieldManagers = await FieldManager.find({ 
+      createdBy: { $in: coordinatorIds } 
+    }).lean();
+    const fieldManagerIds = fieldManagers.map(fm => fm._id);
+
+    // Get all team leaders under field managers
+    const teamLeadersByFieldManager = await TeamLeader.find({ 
+      createdBy: { $in: fieldManagerIds } 
+    }).lean();
+    
+    // Also get team leaders assigned to district coordinators
+    const districtCoordinatorsPopulated = await DistrictCoordinator.find({ createdBy: adminId })
+      .select('assignedTeamLeaders')
+      .lean();
+    
+    const assignedTeamLeaderIds = districtCoordinatorsPopulated
+      .flatMap(dc => (dc.assignedTeamLeaders || []))
+      .filter(id => id); // Remove null/undefined
+    
+    const teamLeadersByAssignment = assignedTeamLeaderIds.length > 0 
+      ? await TeamLeader.find({ _id: { $in: assignedTeamLeaderIds } }).lean()
+      : [];
+    
+    // Combine and deduplicate team leaders
+    const teamLeaderIdSet = new Set();
+    const teamLeadersMap = new Map();
+    
+    teamLeadersByFieldManager.forEach(tl => {
+      const idStr = tl._id.toString();
+      teamLeaderIdSet.add(idStr);
+      teamLeadersMap.set(idStr, tl);
+    });
+    
+    teamLeadersByAssignment.forEach(tl => {
+      const idStr = tl._id.toString();
+      teamLeaderIdSet.add(idStr);
+      if (!teamLeadersMap.has(idStr)) {
+        teamLeadersMap.set(idStr, tl);
+      }
+    });
+    
+    const teamLeaders = Array.from(teamLeadersMap.values());
+    const mongoose = require('mongoose');
+    const teamLeaderIds = Array.from(teamLeaderIdSet).map(id => new mongoose.Types.ObjectId(id));
+
+    // Get all field employees under team leaders (both created and assigned)
+    const fieldEmployeesByCreation = await FieldEmployee.find({ 
+      createdBy: { $in: teamLeaderIds } 
+    }).lean();
+    
+    // Get assigned field employees from team leaders
+    const teamLeadersPopulated = await TeamLeader.find({ 
+      _id: { $in: teamLeaderIds } 
+    })
+      .select('assignedFieldEmployees')
+      .lean();
+    
+    const assignedFieldEmployeeIds = teamLeadersPopulated
+      .flatMap(tl => (tl.assignedFieldEmployees || []))
+      .filter(id => id); // Remove null/undefined
+    
+    const fieldEmployeesByAssignment = assignedFieldEmployeeIds.length > 0
+      ? await FieldEmployee.find({ _id: { $in: assignedFieldEmployeeIds } }).lean()
+      : [];
+    
+    // Combine and deduplicate field employees
+    const fieldEmployeeIdSet = new Set();
+    const fieldEmployeesMap = new Map();
+    
+    fieldEmployeesByCreation.forEach(fe => {
+      const idStr = fe._id.toString();
+      fieldEmployeeIdSet.add(idStr);
+      fieldEmployeesMap.set(idStr, fe);
+    });
+    
+    fieldEmployeesByAssignment.forEach(fe => {
+      const idStr = fe._id.toString();
+      fieldEmployeeIdSet.add(idStr);
+      if (!fieldEmployeesMap.has(idStr)) {
+        fieldEmployeesMap.set(idStr, fe);
+      }
+    });
+    
+    const fieldEmployees = Array.from(fieldEmployeesMap.values());
+    const fieldEmployeeIds = Array.from(fieldEmployeeIdSet).map(id => new mongoose.Types.ObjectId(id));
+
+    // Get all students under this admin through referral hierarchy
+    const students = await Student.find({ 
+      'referralHierarchy.admin': adminId 
+    }).lean();
+    const studentIds = students.map(s => s._id);
+
+    // Parallel queries for performance
+    const [
+      userCounts,
+      monthlySubscriptions,
+      activeUsersCount,
+      inactiveUsersCount,
+      subscriptionStats,
+      userGrowthChart,
+      recentRegistrations
+    ] = await Promise.all([
+      // User counts by role
+      Promise.resolve({
+        districtCoordinators: districtCoordinators.length,
+        coordinators: coordinators.length,
+        teamLeaders: teamLeaders.length,
+        fieldEmployees: fieldEmployees.length,
+        students: students.length,
+        total: districtCoordinators.length + coordinators.length + 
+               teamLeaders.length + fieldEmployees.length + students.length
+      }),
+
+      // Monthly subscription count (current month)
+      (async () => {
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const subscriptions = await StudentSubscription.countDocuments({
+          student: { $in: studentIds },
+          paymentStatus: 'COMPLETED',
+          createdAt: { $gte: monthStart, $lte: monthEnd }
+        });
+
+        return subscriptions;
+      })(),
+
+      // Active users count (users with activity in last 10 days)
+      (async () => {
+        const activeStudents = await StudentSubscription.distinct('student', {
+          student: { $in: studentIds },
+          paymentStatus: 'COMPLETED',
+          createdAt: { $gte: inactiveThresholdDate }
+        });
+
+        const newStudents = await Student.find({
+          'referralHierarchy.admin': adminId,
+          createdAt: { $gte: inactiveThresholdDate }
+        }).distinct('_id');
+
+        const activeSet = new Set([
+          ...activeStudents.map(id => id.toString()),
+          ...newStudents.map(id => id.toString())
+        ]);
+
+        return activeSet.size;
+      })(),
+
+      // Inactive users count (users without activity in last 10 days)
+      (async () => {
+        const activeStudents = await StudentSubscription.distinct('student', {
+          student: { $in: studentIds },
+          paymentStatus: 'COMPLETED',
+          createdAt: { $gte: inactiveThresholdDate }
+        });
+
+        const newStudents = await Student.find({
+          'referralHierarchy.admin': adminId,
+          createdAt: { $gte: inactiveThresholdDate }
+        }).distinct('_id');
+
+        const activeSet = new Set([
+          ...activeStudents.map(id => id.toString()),
+          ...newStudents.map(id => id.toString())
+        ]);
+
+        return students.length - activeSet.size;
+      })(),
+
+      // Subscription statistics (count only, no amounts)
+      (async () => {
+        const [totalSubscriptions, activeSubscriptions, periodSubscriptions] = await Promise.all([
+          StudentSubscription.countDocuments({
+            student: { $in: studentIds },
+            paymentStatus: 'COMPLETED'
+          }),
+          StudentSubscription.countDocuments({
+            student: { $in: studentIds },
+            paymentStatus: 'COMPLETED',
+            isActive: true,
+            endDate: { $gt: new Date() }
+          }),
+          StudentSubscription.countDocuments({
+            student: { $in: studentIds },
+            paymentStatus: 'COMPLETED',
+            createdAt: { $gte: startDate, $lte: endDate }
+          })
+        ]);
+
+        return {
+          total: totalSubscriptions,
+          active: activeSubscriptions,
+          period: periodSubscriptions
+        };
+      })(),
+
+      // User growth chart data (last 30 days by default)
+      (async () => {
+        const chartData = [];
+        const days = periodDays;
+        
+        for (let i = days - 1; i >= 0; i--) {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          date.setHours(0, 0, 0, 0);
+          const nextDate = new Date(date);
+          nextDate.setDate(nextDate.getDate() + 1);
+
+          const [studentsCount, subscriptionsCount] = await Promise.all([
+            Student.countDocuments({
+              'referralHierarchy.admin': adminId,
+              createdAt: { $gte: date, $lt: nextDate }
+            }),
+            StudentSubscription.countDocuments({
+              student: { $in: studentIds },
+              paymentStatus: 'COMPLETED',
+              createdAt: { $gte: date, $lt: nextDate }
+            })
+          ]);
+
+          chartData.push({
+            date: date.toISOString().split('T')[0],
+            students: studentsCount,
+            subscriptions: subscriptionsCount
+          });
+        }
+
+        return chartData;
+      })(),
+
+      // Recent registrations (last 10)
+      Student.find({
+        'referralHierarchy.admin': adminId
+      })
+        .select('userId firstName lastName email mobileNumber createdAt')
+        .sort({ createdAt: -1 })
+        .limit(10)
+    ]);
+
+    // Calculate monthly subscription breakdown
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    
+    const monthlySubscriptionsBreakdown = await StudentSubscription.aggregate([
+      {
+        $match: {
+          student: { $in: studentIds },
+          paymentStatus: 'COMPLETED',
+          createdAt: { $gte: currentMonthStart, $lte: currentMonthEnd }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    // Get user status breakdown
+    const userStatusBreakdown = {
+      active: {
+        districtCoordinators: districtCoordinators.filter(dc => dc.isActive).length,
+        coordinators: coordinators.filter(c => c.isActive).length,
+        teamLeaders: teamLeaders.filter(tl => tl.isActive).length,
+        fieldEmployees: fieldEmployees.filter(fe => fe.isActive).length,
+        students: students.filter(s => s.isActive).length
+      },
+      inactive: {
+        districtCoordinators: districtCoordinators.filter(dc => !dc.isActive).length,
+        coordinators: coordinators.filter(c => !c.isActive).length,
+        teamLeaders: teamLeaders.filter(tl => !tl.isActive).length,
+        fieldEmployees: fieldEmployees.filter(fe => !fe.isActive).length,
+        students: students.filter(s => !s.isActive).length
+      }
+    };
+
+    res.json({
+      success: true,
+      message: 'Dashboard data retrieved successfully',
+      data: {
+        summary: {
+          userCounts,
+          monthlySubscriptions,
+          activeUsers: activeUsersCount,
+          inactiveUsers: inactiveUsersCount,
+          subscriptionStats
+        },
+        userStatusBreakdown,
+        monthlySubscriptionsBreakdown: monthlySubscriptionsBreakdown.map(item => ({
+          date: item._id,
+          count: item.count
+        })),
+        userGrowthChart,
+        recentRegistrations: recentRegistrations.map(student => ({
+          userId: student.userId,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          email: student.email || null,
+          mobileNumber: student.mobileNumber,
+          registeredAt: student.createdAt
+        })),
+        period: {
+          days: periodDays,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString()
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Admin dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving dashboard data',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   signup,
   login,
@@ -2012,6 +2796,9 @@ module.exports = {
   assignTaskLevelsToTeamLeader,
   assignFieldEmployeesToTeamLeader,
   setTaskLevelRegistrationLimitForCoordinator,
-  setTaskLevelRegistrationLimit
+  setTaskLevelRegistrationLimit,
+  getDashboard,
+  getCoordinatorWalletAndRegistrations,
+  getDistrictCoordinatorWalletAndRegistrations
 };
 

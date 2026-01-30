@@ -393,9 +393,7 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
-- `type` (optional): Filter by transaction type (`COMMISSION`, `WITHDRAWAL`, `ADJUSTMENT`)
-
-**Response (200):**
+- `type` (optional): Filter by transaction type (`COMMISSION`, `WITHDRAWAL`, `ADJUSTMENT`)**Response (200):**
 ```json
 {
   "success": true,

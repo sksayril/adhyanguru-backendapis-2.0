@@ -353,9 +353,7 @@ Authorization: Bearer <token>
     }
   }
 }
-```
-
-**Note:** 
+```**Note:** 
 - Team Leaders receive commissions when students referred by their Field Employees purchase subscriptions or courses
 - Commission percentages are configurable by Super Admin through the Commission Settings API
 - Super Admin can create and update commission settings using `/api/super-admin/commission-settings` endpoints:

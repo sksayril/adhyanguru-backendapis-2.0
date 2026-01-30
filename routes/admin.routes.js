@@ -52,5 +52,12 @@ router.post('/coordinator/assign-district-coordinators', adminController.assignD
 router.post('/district-coordinator/assign-team-leaders', adminController.assignTeamLeadersToDistrictCoordinator);
 router.post('/team-leader/assign-field-employees', adminController.assignFieldEmployeesToTeamLeader);
 
+// Dashboard endpoint
+router.get('/dashboard', adminController.getDashboard);
+
+// Wallet and Registration endpoints
+router.get('/coordinator/:id/wallet-registrations', adminController.getCoordinatorWalletAndRegistrations);
+router.get('/district-coordinator/:id/wallet-registrations', adminController.getDistrictCoordinatorWalletAndRegistrations);
+
 module.exports = router;
 

@@ -468,7 +468,328 @@ Authorization: Bearer <token>
 
 ---
 
-### 10. Create District
+### 10. Get Dashboard
+Get comprehensive dashboard with user counts, subscriptions, active/inactive users, and more. (Protected - Requires Admin authentication)
+
+**GET** `/dashboard?period=30`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `period` (optional): Number of days for the period (default: 30). Used for growth chart and period-based statistics.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Dashboard data retrieved successfully",
+  "data": {
+    "summary": {
+      "userCounts": {
+        "districtCoordinators": 5,
+        "coordinators": 12,
+        "teamLeaders": 25,
+        "fieldEmployees": 50,
+        "students": 150,
+        "total": 242
+      },
+      "monthlySubscriptions": 45,
+      "activeUsers": 120,
+      "inactiveUsers": 30,
+      "subscriptionStats": {
+        "total": 200,
+        "active": 150,
+        "period": 45
+      }
+    },
+    "userStatusBreakdown": {
+      "active": {
+        "districtCoordinators": 5,
+        "coordinators": 11,
+        "teamLeaders": 24,
+        "fieldEmployees": 48,
+        "students": 120
+      },
+      "inactive": {
+        "districtCoordinators": 0,
+        "coordinators": 1,
+        "teamLeaders": 1,
+        "fieldEmployees": 2,
+        "students": 30
+      }
+    },
+    "monthlySubscriptionsBreakdown": [
+      {
+        "date": "2024-01-01",
+        "count": 5
+      },
+      {
+        "date": "2024-01-02",
+        "count": 8
+      },
+      {
+        "date": "2024-01-03",
+        "count": 12
+      }
+    ],
+    "userGrowthChart": [
+      {
+        "date": "2024-01-01",
+        "students": 2,
+        "subscriptions": 5
+      },
+      {
+        "date": "2024-01-02",
+        "students": 3,
+        "subscriptions": 8
+      },
+      {
+        "date": "2024-01-03",
+        "students": 5,
+        "subscriptions": 12
+      }
+    ],
+    "recentRegistrations": [
+      {
+        "userId": "ADGUSTU150",
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "john.doe@example.com",
+        "mobileNumber": "1234567890",
+        "registeredAt": "2024-01-15T10:30:00.000Z"
+      },
+      {
+        "userId": "ADGUSTU149",
+        "firstName": "Jane",
+        "lastName": "Smith",
+        "email": "jane.smith@example.com",
+        "mobileNumber": "1234567891",
+        "registeredAt": "2024-01-15T09:15:00.000Z"
+      }
+    ],
+    "period": {
+      "days": 30,
+      "startDate": "2023-12-16T00:00:00.000Z",
+      "endDate": "2024-01-15T23:59:59.999Z"
+    }
+  }
+}
+```
+
+**Response Fields:**
+- `summary.userCounts`: Total counts of users in the admin's hierarchy (district coordinators, coordinators, team leaders, field employees, students)
+- `summary.monthlySubscriptions`: Count of subscriptions created in the current month (no amount data included)
+- `summary.activeUsers`: Count of students with activity in the last 10 days
+- `summary.inactiveUsers`: Count of students without recent activity
+- `summary.subscriptionStats`: Subscription statistics (total, active, period-based counts)
+- `userStatusBreakdown`: Active and inactive user counts by role
+- `monthlySubscriptionsBreakdown`: Daily subscription counts for the current month
+- `userGrowthChart`: Daily growth data for students and subscriptions over the specified period
+- `recentRegistrations`: Last 10 student registrations under the admin's hierarchy
+- `period`: Period information (days, start date, end date)
+
+**Note:**
+- Dashboard includes all users in the admin's hierarchy (created and assigned)
+- Active users are defined as students with subscription activity or new registrations in the last 10 days
+- Monthly subscriptions count only includes completed payments in the current month
+- No amount-based data is included (only counts)
+- User growth chart shows daily registrations and subscriptions over the specified period
+- All data is filtered to only include users/students under the admin's hierarchy
+
+---
+
+### 11. Get Coordinator Wallet Balance and Registrations
+Get coordinator details including wallet balance and student registration counts by coordinator ID. (Protected - Requires Admin authentication)
+
+**GET** `/coordinator/:id/wallet-registrations`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `id` (path): MongoDB `_id` or `userId` of the coordinator (e.g., ADGUCO01)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Coordinator wallet and registration data retrieved successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439014",
+    "userId": "ADGUCO01",
+    "firstName": "Coordinator",
+    "lastName": "User",
+    "email": "coordinator@example.com",
+    "mobileNumber": "1234567893",
+    "wallet": {
+      "balance": 5000.50,
+      "totalEarned": 15000.00,
+      "totalWithdrawn": 10000.00
+    },
+    "studentRegistrations": {
+      "total": 150,
+      "level1": 100,
+      "level2": 50,
+      "taskLevels": [
+        {
+          "taskLevel": {
+            "_id": "507f1f77bcf86cd799439020",
+            "name": "Level 1",
+            "description": "First level task",
+            "level": 1,
+            "registrationLimit": 200,
+            "globalRegistrationCount": 500
+          },
+          "registrationLimit": 100,
+          "registrationCount": 75
+        },
+        {
+          "taskLevel": {
+            "_id": "507f1f77bcf86cd799439021",
+            "name": "Level 2",
+            "description": "Second level task",
+            "level": 2,
+            "registrationLimit": 150,
+            "globalRegistrationCount": 300
+          },
+          "registrationLimit": 80,
+          "registrationCount": 50
+        }
+      ]
+    },
+    "createdBy": {
+      "_id": "507f1f77bcf86cd799439013",
+      "userId": "ADGUDC01",
+      "firstName": "District",
+      "lastName": "Coordinator",
+      "email": "dc@example.com",
+      "mobileNumber": "1234567892"
+    },
+    "isActive": true
+  }
+}
+```
+
+**Response Fields:**
+- `wallet.balance`: Current available wallet balance
+- `wallet.totalEarned`: Total commissions earned
+- `wallet.totalWithdrawn`: Total amount withdrawn
+- `studentRegistrations.total`: Total number of students registered under this coordinator
+- `studentRegistrations.level1`: Registration count for level 1 (legacy)
+- `studentRegistrations.level2`: Registration count for level 2 (legacy)
+- `studentRegistrations.taskLevels`: Array of task level registration counts with limits
+
+**Error Responses:**
+
+**403 Forbidden:**
+```json
+{
+  "success": false,
+  "message": "You do not have permission to view this coordinator"
+}
+```
+
+**404 Not Found:**
+```json
+{
+  "success": false,
+  "message": "Coordinator not found"
+}
+```
+
+**Note:**
+- Only coordinators under the admin's hierarchy can be viewed
+- Wallet balance includes commission earnings from student subscriptions and course purchases
+- Registration counts include both legacy level1/level2 and task-level based registrations
+
+---
+
+### 12. Get District Coordinator Wallet Balance and Registrations
+Get district coordinator details including wallet balance and student registration counts by district coordinator ID. (Protected - Requires Admin authentication)
+
+**GET** `/district-coordinator/:id/wallet-registrations`
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `id` (path): MongoDB `_id` or `userId` of the district coordinator (e.g., ADGUDC01)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "District Coordinator wallet and registration data retrieved successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439013",
+    "userId": "ADGUDC01",
+    "firstName": "District",
+    "lastName": "Coordinator",
+    "email": "dc@example.com",
+    "mobileNumber": "1234567892",
+    "district": "District A",
+    "wallet": {
+      "balance": 3000.25,
+      "totalEarned": 8000.00,
+      "totalWithdrawn": 5000.00
+    },
+    "studentRegistrations": {
+      "total": 200
+    },
+    "coordinatorsUnder": 5,
+    "createdBy": {
+      "_id": "507f1f77bcf86cd799439012",
+      "userId": "ADGUADM01",
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@example.com",
+      "mobileNumber": "1234567891"
+    },
+    "isActive": true
+  }
+}
+```
+
+**Response Fields:**
+- `wallet.balance`: Current available wallet balance
+- `wallet.totalEarned`: Total commissions earned
+- `wallet.totalWithdrawn`: Total amount withdrawn
+- `studentRegistrations.total`: Total number of students registered under this district coordinator
+- `coordinatorsUnder`: Number of coordinators created by this district coordinator
+
+**Error Responses:**
+
+**403 Forbidden:**
+```json
+{
+  "success": false,
+  "message": "You do not have permission to view this district coordinator"
+}
+```
+
+**404 Not Found:**
+```json
+{
+  "success": false,
+  "message": "District Coordinator not found"
+}
+```
+
+**Note:**
+- Only district coordinators created by the admin can be viewed
+- Wallet balance includes commission earnings from student subscriptions and course purchases
+- Student registrations are counted through the referral hierarchy
+
+---
+
+### 13. Create District
 Create a new district with area range. Admin or Super Admin can create districts.
 
 **POST** `/district`
@@ -546,7 +867,7 @@ Content-Type: application/json
 
 ---
 
-### 11. Get All Districts
+### 14. Get All Districts
 Retrieve all districts with optional filtering.
 
 **GET** `/districts`
@@ -599,7 +920,7 @@ Authorization: Bearer <token>
 
 ---
 
-### 12. Update District
+### 15. Update District
 Update district details including area range.
 
 **PUT** `/district/:districtId`
@@ -676,7 +997,7 @@ Content-Type: application/json
 
 ---
 
-### 13. Assign District to District Coordinator
+### 16. Assign District to District Coordinator
 Assign a district to a district coordinator.
 
 **POST** `/district/assign`
@@ -724,7 +1045,7 @@ Content-Type: application/json
 
 ---
 
-### 14. Assign Area Range to Coordinator
+### 17. Assign Area Range to Coordinator
 Assign area range to a coordinator (can be smaller than district).
 
 **POST** `/coordinator/area-range`
