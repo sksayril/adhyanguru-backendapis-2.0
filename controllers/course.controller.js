@@ -734,21 +734,23 @@ const deleteCourseChapter = async (req, res) => {
       });
     }
 
-    // Delete PDF from S3 if exists
+    // Delete PDF from S3 if exists (optional - don't fail if delete fails)
     if (chapter.content.pdf) {
       try {
         await deleteFromS3(chapter.content.pdf);
       } catch (error) {
-        console.error('Error deleting PDF:', error);
+        // S3 deletion is optional, just log warning
+        console.warn('Could not delete PDF from S3 (this is optional):', error.message);
       }
     }
 
-    // Delete video from S3 if exists
+    // Delete video from S3 if exists (optional - don't fail if delete fails)
     if (chapter.content.video) {
       try {
         await deleteFromS3(chapter.content.video);
       } catch (error) {
-        console.error('Error deleting video:', error);
+        // S3 deletion is optional, just log warning
+        console.warn('Could not delete video from S3 (this is optional):', error.message);
       }
     }
 

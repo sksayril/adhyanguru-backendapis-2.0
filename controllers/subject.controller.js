@@ -420,13 +420,43 @@ const createChapter = async (req, res) => {
     let videoFileName = null;
 
     // Check for PDF file
-    if (req.files && req.files.pdf) {
+    if (req.files && req.files.pdf && req.files.pdf[0]) {
       try {
         const pdfFile = req.files.pdf[0];
         const fileName = `chapter-pdf-${Date.now()}-${title.trim().replace(/\s+/g, '-')}.pdf`;
-        pdfUrl = await uploadToS3(pdfFile.buffer, fileName, pdfFile.mimetype);
+        
+        // Handle file from disk storage (handleMultipleUpload uses diskStorage)
+        const fs = require('fs');
+        let pdfBody;
+        if (pdfFile.path) {
+          // File is on disk, read it as a buffer (S3 requires buffer, not stream for small files)
+          pdfBody = fs.readFileSync(pdfFile.path);
+        } else if (pdfFile.buffer) {
+          // File is in memory (buffer)
+          pdfBody = pdfFile.buffer;
+        } else {
+          throw new Error('PDF file data not found');
+        }
+        
+        if (!pdfBody || pdfBody.length === 0) {
+          throw new Error('PDF file is empty');
+        }
+        
+        pdfUrl = await uploadToS3(pdfBody, fileName, pdfFile.mimetype);
         pdfFileName = pdfFile.originalname;
+        
+        // Clean up temp file if it was on disk
+        if (pdfFile.path) {
+          fs.unlink(pdfFile.path, (err) => {
+            if (err) console.error('Error deleting temp PDF file:', err);
+          });
+        }
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.pdf[0] && req.files.pdf[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.pdf[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading PDF',
@@ -436,13 +466,59 @@ const createChapter = async (req, res) => {
     }
 
     // Check for Video file
-    if (req.files && req.files.video) {
+    if (req.files && req.files.video && req.files.video[0]) {
       try {
         const videoFile = req.files.video[0];
-        const fileName = `chapter-video-${Date.now()}-${title.trim().replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
-        videoUrl = await uploadToS3(videoFile.buffer, fileName, videoFile.mimetype);
-        videoFileName = videoFile.originalname;
+        
+        // Check if video was already uploaded to S3 by middleware
+        if (videoFile.s3Url) {
+          // Video already uploaded by middleware, just use the URL
+          videoUrl = videoFile.s3Url;
+          videoFileName = videoFile.originalname;
+        } else {
+          // Video not uploaded yet, need to upload it
+          const fileName = `chapter-video-${Date.now()}-${title.trim().replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
+          
+          // Handle file from disk storage
+          const fs = require('fs');
+          let videoBody;
+          if (videoFile.path) {
+            // For large videos, use stream; for smaller ones, use buffer
+            // Check file size first
+            const stats = fs.statSync(videoFile.path);
+            if (stats.size > 100 * 1024 * 1024) { // > 100MB, use stream
+              videoBody = fs.createReadStream(videoFile.path);
+            } else {
+              // Smaller file, read as buffer
+              videoBody = fs.readFileSync(videoFile.path);
+            }
+          } else if (videoFile.buffer) {
+            // File is in memory (buffer)
+            videoBody = videoFile.buffer;
+          } else {
+            throw new Error('Video file data not found');
+          }
+          
+          if (!videoBody) {
+            throw new Error('Video file is empty');
+          }
+          
+          videoUrl = await uploadToS3(videoBody, fileName, videoFile.mimetype);
+          videoFileName = videoFile.originalname;
+          
+          // Clean up temp file if it was on disk
+          if (videoFile.path) {
+            fs.unlink(videoFile.path, (err) => {
+              if (err) console.error('Error deleting temp video file:', err);
+            });
+          }
+        }
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.video[0] && req.files.video[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.video[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading video',
@@ -591,26 +667,57 @@ const updateChapter = async (req, res) => {
     }
 
     // Handle PDF update if provided
-    if (req.files && req.files.pdf) {
+    if (req.files && req.files.pdf && req.files.pdf[0]) {
       try {
-        // Delete old PDF if exists
+        // Delete old PDF if exists (optional - don't fail if delete fails)
         if (chapter.content.pdf && chapter.content.pdf.url) {
           try {
             await deleteFromS3(chapter.content.pdf.url);
           } catch (error) {
-            console.error('Error deleting old PDF:', error);
+            // Log but don't fail - S3 delete is optional
+            console.warn('Could not delete old PDF from S3 (this is optional):', error.message);
           }
         }
 
         const pdfFile = req.files.pdf[0];
         const fileName = `chapter-pdf-${Date.now()}-${chapter.title.replace(/\s+/g, '-')}.pdf`;
-        const pdfUrl = await uploadToS3(pdfFile.buffer, fileName, pdfFile.mimetype);
+        
+        // Handle file from disk storage (handleMultipleUpload uses diskStorage)
+        const fs = require('fs');
+        let pdfBody;
+        if (pdfFile.path) {
+          // File is on disk, read it as a buffer (S3 requires buffer, not stream for small files)
+          pdfBody = fs.readFileSync(pdfFile.path);
+        } else if (pdfFile.buffer) {
+          // File is in memory (buffer)
+          pdfBody = pdfFile.buffer;
+        } else {
+          throw new Error('PDF file data not found');
+        }
+        
+        if (!pdfBody || pdfBody.length === 0) {
+          throw new Error('PDF file is empty');
+        }
+        
+        const pdfUrl = await uploadToS3(pdfBody, fileName, pdfFile.mimetype);
         
         chapter.content.pdf = {
           url: pdfUrl,
           fileName: pdfFile.originalname
         };
+        
+        // Clean up temp file if it was on disk
+        if (pdfFile.path) {
+          fs.unlink(pdfFile.path, (err) => {
+            if (err) console.error('Error deleting temp PDF file:', err);
+          });
+        }
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.pdf[0] && req.files.pdf[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.pdf[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading PDF',
@@ -620,26 +727,83 @@ const updateChapter = async (req, res) => {
     }
 
     // Handle Video update if provided
-    if (req.files && req.files.video) {
+    if (req.files && req.files.video && req.files.video[0]) {
       try {
-        // Delete old video if exists
-        if (chapter.content.video && chapter.content.video.url) {
-          try {
-            await deleteFromS3(chapter.content.video.url);
-          } catch (error) {
-            console.error('Error deleting old video:', error);
+        const videoFile = req.files.video[0];
+        
+        // Check if video was already uploaded to S3 by middleware
+        if (videoFile.s3Url) {
+          // Video already uploaded by middleware, just use the URL
+          // Delete old video if exists (optional)
+          if (chapter.content.video && chapter.content.video.url) {
+            try {
+              await deleteFromS3(chapter.content.video.url);
+            } catch (error) {
+              console.warn('Could not delete old video from S3 (this is optional):', error.message);
+            }
+          }
+          
+          chapter.content.video = {
+            url: videoFile.s3Url,
+            fileName: videoFile.originalname
+          };
+        } else {
+          // Video not uploaded yet, need to upload it
+          // Delete old video if exists (optional)
+          if (chapter.content.video && chapter.content.video.url) {
+            try {
+              await deleteFromS3(chapter.content.video.url);
+            } catch (error) {
+              console.warn('Could not delete old video from S3 (this is optional):', error.message);
+            }
+          }
+
+          const fileName = `chapter-video-${Date.now()}-${chapter.title.replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
+          
+          // Handle file from disk storage
+          const fs = require('fs');
+          let videoBody;
+          if (videoFile.path) {
+            // For large videos, use stream; for smaller ones, use buffer
+            // Check file size first
+            const stats = fs.statSync(videoFile.path);
+            if (stats.size > 100 * 1024 * 1024) { // > 100MB, use stream
+              videoBody = fs.createReadStream(videoFile.path);
+            } else {
+              // Smaller file, read as buffer
+              videoBody = fs.readFileSync(videoFile.path);
+            }
+          } else if (videoFile.buffer) {
+            // File is in memory (buffer)
+            videoBody = videoFile.buffer;
+          } else {
+            throw new Error('Video file data not found');
+          }
+          
+          if (!videoBody) {
+            throw new Error('Video file is empty');
+          }
+          
+          const videoUrl = await uploadToS3(videoBody, fileName, videoFile.mimetype);
+          
+          chapter.content.video = {
+            url: videoUrl,
+            fileName: videoFile.originalname
+          };
+          
+          // Clean up temp file if it was on disk
+          if (videoFile.path) {
+            fs.unlink(videoFile.path, (err) => {
+              if (err) console.error('Error deleting temp video file:', err);
+            });
           }
         }
-
-        const videoFile = req.files.video[0];
-        const fileName = `chapter-video-${Date.now()}-${chapter.title.replace(/\s+/g, '-')}.${getFileExtension(videoFile.mimetype)}`;
-        const videoUrl = await uploadToS3(videoFile.buffer, fileName, videoFile.mimetype);
-        
-        chapter.content.video = {
-          url: videoUrl,
-          fileName: videoFile.originalname
-        };
       } catch (error) {
+        // Clean up temp file on error
+        if (req.files.video[0] && req.files.video[0].path) {
+          const fs = require('fs');
+          fs.unlink(req.files.video[0].path, () => {});
+        }
         return res.status(500).json({
           success: false,
           message: 'Error uploading video',
@@ -680,12 +844,13 @@ const deleteChapter = async (req, res) => {
       });
     }
 
-    // Delete files from S3 if they exist
+    // Delete files from S3 if they exist (optional - don't fail if delete fails)
     if (chapter.content.pdf && chapter.content.pdf.url) {
       try {
         await deleteFromS3(chapter.content.pdf.url);
       } catch (error) {
-        console.error('Error deleting PDF from S3:', error);
+        // S3 deletion is optional, just log warning
+        console.warn('Could not delete PDF from S3 (this is optional):', error.message);
       }
     }
 
@@ -693,7 +858,8 @@ const deleteChapter = async (req, res) => {
       try {
         await deleteFromS3(chapter.content.video.url);
       } catch (error) {
-        console.error('Error deleting video from S3:', error);
+        // S3 deletion is optional, just log warning
+        console.warn('Could not delete video from S3 (this is optional):', error.message);
       }
     }
 
