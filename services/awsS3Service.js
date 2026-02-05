@@ -54,9 +54,11 @@ const uploadToS3 = async (fileBuffer, fileName, contentType, folder = 'profile-p
 };
 
 /**
- * Delete file from AWS S3
+ * Delete file from AWS S3 (Optional - fails gracefully)
  * @param {string} fileUrl - S3 file URL
  * @returns {Promise<void>}
+ * @description This function will not throw errors. It's optional to delete from S3.
+ * If IAM permissions don't allow deletion, it will just log a warning and continue.
  */
 const deleteFromS3 = async (fileUrl) => {
   try {
@@ -75,8 +77,12 @@ const deleteFromS3 = async (fileUrl) => {
 
     await s3.deleteObject(params).promise();
   } catch (error) {
-    console.error(`S3 delete failed: ${error.message}`);
-    // Don't throw error, just log it
+    // Don't throw error - S3 deletion is optional
+    // Only log if it's not a permission error (permission errors are expected)
+    if (!error.message || !error.message.includes('not authorized') && !error.message.includes('explicit deny')) {
+      console.warn(`S3 delete warning (optional operation): ${error.message}`);
+    }
+    // Silently continue - deletion from S3 is optional
   }
 };
 
